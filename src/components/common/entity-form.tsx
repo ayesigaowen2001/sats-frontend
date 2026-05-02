@@ -3,7 +3,14 @@ import type { FormEvent } from "react";
 export interface EntityFormField<T extends Record<string, string>> {
   name: keyof T;
   label: string;
-  type?: "text" | "email" | "password" | "date" | "datetime-local" | "select";
+  type?:
+    | "text"
+    | "email"
+    | "password"
+    | "date"
+    | "datetime-local"
+    | "select"
+    | "color";
   required?: boolean;
   colSpan?: 1 | 2;
   options?: Array<{ value: string; label: string }>;
@@ -85,7 +92,11 @@ export function EntityForm<T extends Record<string, string>>({
               readOnly={field.readOnly}
               value={values[field.name] ?? ""}
               onChange={(event) => onChange(field.name, event.target.value)}
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-[var(--color-ice)] outline-none disabled:opacity-50"
+              className={`mt-2 w-full rounded-xl border border-[var(--color-shell-border)] text-[var(--color-ice)] outline-none disabled:opacity-50 ${
+                field.type === "color"
+                  ? "h-11 bg-transparent px-1 py-1"
+                  : "bg-transparent px-3 py-2"
+              }`}
             />
           )}
         </label>

@@ -60,7 +60,11 @@ async function requestJson<T>(path: string): Promise<T> {
     console.warn(`[API Request] ${path} - No access token found`);
   }
 
-  const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
+  const requestUrl = path.startsWith("/api/")
+    ? path
+    : `${appConfig.apiBaseUrl}${path}`;
+
+  const response = await fetch(requestUrl, {
     cache: "no-store",
     headers,
   });

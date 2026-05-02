@@ -128,11 +128,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         description: "Inspect every device and deployment status.",
       },
       {
-        label: "Device Map View",
-        href: "/device/map",
-        description: "Locate deployed devices spatially.",
-      },
-      {
         label: "Categories",
         href: "/device/categories",
         description: "Manage device classes and hardware families.",

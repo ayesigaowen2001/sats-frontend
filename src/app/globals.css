@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "primereact/resources/primereact.min.css";
 @import "primeicons/primeicons.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
+@import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 
 :root {
   --color-primary: #0f4c5c;
@@ -149,4 +151,14 @@ select {
   color: inherit;
   background: transparent;
   cursor: pointer;
+}
+
+.sats-draw-toolbar-dark {
+  background: rgba(17, 24, 39, 0.95);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.sats-draw-toolbar-dark .mapbox-gl-draw_ctrl-draw-btn {
+  background-color: rgba(17, 24, 39, 0.95);
+  filter: invert(1) hue-rotate(180deg) brightness(1.25);
 }

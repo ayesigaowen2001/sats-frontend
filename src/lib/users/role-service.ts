@@ -35,6 +35,17 @@ interface RolePermissionsApiResponse {
   message?: string;
 }
 
+interface RoleApiResponse {
+  item?: RoleApiModel;
+  role?: RoleApiModel;
+}
+
+interface UserRolesApiResponse {
+  items?: RoleApiModel[];
+  roles?: RoleApiModel[];
+  message?: string;
+}
+
 export interface RoleRecord {
   id: string;
   organizationId: string | null;
@@ -60,6 +71,10 @@ export interface CreateRoleInput {
 
 export interface AssignPermissionsInput {
   permission_ids: number[];
+}
+
+export interface AssignRolesToUserInput {
+  role_ids: number[];
 }
 
 export interface RolePermissionRecord {
@@ -159,6 +174,90 @@ export class RoleService {
     }
   }
 
+  async getRoleById(roleId: string): Promise<RoleRecord> {
+    const accessToken = getAccessToken();
+    const headers = new Headers({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/roles/${encodeURIComponent(roleId)}`,
+      {
+        method: "GET",
+        headers,
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to load role: ${response.status}`);
+    }
+
+    const payload = (await response.json()) as RoleApiModel | RoleApiResponse;
+
+    const item =
+      "id" in payload ? payload : (payload.item ?? payload.role ?? null);
+
+    if (!item) {
+      throw new Error("Role payload is missing role data.");
+    }
+
+    return mapRole(item);
+  }
+
+  async updateRole(roleId: string, input: CreateRoleInput): Promise<void> {
+    const accessToken = getAccessToken();
+    const headers = new Headers({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/roles/${encodeURIComponent(roleId)}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(input),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to update role: ${response.status}`);
+    }
+  }
+
+  async deleteRole(roleId: string): Promise<void> {
+    const accessToken = getAccessToken();
+    const headers = new Headers({
+      Accept: "application/json",
+    });
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/roles/${encodeURIComponent(roleId)}`,
+      {
+        method: "DELETE",
+        headers,
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete role: ${response.status}`);
+    }
+  }
+
   async assignPermissionsToRole(
     roleId: string,
     input: AssignPermissionsInput,
@@ -247,6 +346,104 @@ export class RoleService {
 
     if (!response.ok) {
       throw new Error(`Failed to remove permissions: ${response.status}`);
+    }
+  }
+
+  async getMyPermissions(): Promise<RolePermissionRecord[]> {
+    const accessToken = getAccessToken();
+    const headers = new Headers({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/roles/my-permissions`,
+      {
+        method: "GET",
+        headers,
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to load my permissions: ${response.status}`);
+    }
+
+    const payload = (await response.json()) as
+      | RolePermissionsApiResponse
+      | RolePermissionApiModel[];
+
+    const items = Array.isArray(payload)
+      ? payload
+      : (payload.items ?? payload.permissions ?? []);
+
+    return items.map(mapRolePermission);
+  }
+
+  async getUserRoles(userId: string): Promise<RoleRecord[]> {
+    const accessToken = getAccessToken();
+    const headers = new Headers({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/roles/users/${encodeURIComponent(userId)}/roles`,
+      {
+        method: "GET",
+        headers,
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to load user roles: ${response.status}`);
+    }
+
+    const payload = (await response.json()) as
+      | UserRolesApiResponse
+      | RoleApiModel[];
+
+    const items = Array.isArray(payload)
+      ? payload
+      : (payload.items ?? payload.roles ?? []);
+
+    return items.map(mapRole);
+  }
+
+  async assignRolesToUser(
+    userId: string,
+    input: AssignRolesToUserInput,
+  ): Promise<void> {
+    const accessToken = getAccessToken();
+    const headers = new Headers({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/roles/users/${encodeURIComponent(userId)}/roles`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(input),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to assign roles to user: ${response.status}`);
     }
   }
 }

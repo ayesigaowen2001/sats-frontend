@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { OrganizationActiveSubscriptionsPageView } from "../../../../components/organization-active-subscriptions-page-view";
 import { OrganizationAllOrganizationsPageView } from "../../../../components/organization-all-organizations-page-view";
+import { OrganizationBrandingPageView } from "../../../../components/organization-branding-page-view";
 import { OrganizationSubscriptionPlansPageView } from "../../../../components/organization-subscription-plans-page-view";
 import { ModuleSectionPage } from "@/components/module-section-page";
 import { hasModuleSection } from "@/lib/dashboard-config";
@@ -27,6 +28,10 @@ export default async function OrganizationSectionPage({
 
   if (section === "active-subscriptions") {
     return <OrganizationActiveSubscriptionsPageView />;
+  }
+
+  if (section === "branding") {
+    return <OrganizationBrandingPageView />;
   }
 
   return <ModuleSectionPage pathname={`/organization/${section}`} />;

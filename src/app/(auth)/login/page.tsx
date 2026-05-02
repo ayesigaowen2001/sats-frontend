@@ -79,7 +79,7 @@ export default function LoginPage() {
             disabled={isSubmitting}
             className="w-full rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition-colors hover:bg-[var(--color-sand)]/26"
           >
-            {isSubmitting ? "Signing in..." : "Continue to Module Hub"}
+            {isSubmitting ? "Signing in..." : "Sign In"}
           </button>
         </form>
       </section>
