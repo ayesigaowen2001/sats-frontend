@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 
-interface DataTableColumn<T extends { id: string }> {
+interface DataTableColumn<T extends { id: string | number }> {
   header: string;
   render: (row: T) => ReactNode;
 }
 
-interface DataTableProps<T extends { id: string }> {
+interface DataTableProps<T extends { id: string | number }> {
   columns: DataTableColumn<T>[];
   rows: T[];
   showCard?: boolean;
@@ -13,7 +13,7 @@ interface DataTableProps<T extends { id: string }> {
   minColumnWidthRem?: number;
 }
 
-export function DataTable<T extends { id: string }>({
+export function DataTable<T extends { id: string | number }>({
   columns,
   rows,
   showCard = true,

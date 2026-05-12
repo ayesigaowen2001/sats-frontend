@@ -21,7 +21,7 @@ import {
 } from "@/lib/devices/device-specifications-service";
 import { sensorsService, type Sensor } from "@/lib/devices/sensors-service";
 
-interface DeviceSpecificationFormValues {
+interface DeviceSpecificationFormValues extends Record<string, string> {
   category_id: string;
   gps_model: string;
   communication_type: string;
@@ -894,9 +894,8 @@ export function DeviceSpecificationsPageView() {
 
           {!selectedSpecificationId ? (
             <ResourceFeedback
-              state="empty"
-              resourceName="selected specification"
-              message="Select a specification to view and assign sensors."
+              title="No specification selected"
+              detail="Select a specification to view and assign sensors."
             />
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">

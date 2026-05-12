@@ -1,6 +1,10 @@
 import type { FormEvent } from "react";
 
-export interface EntityFormField<T extends Record<string, string>> {
+type StringFormValues<T> = {
+  [K in keyof T]: string;
+};
+
+export interface EntityFormField<T extends StringFormValues<T>> {
   name: keyof T;
   label: string;
   type?:
@@ -17,7 +21,7 @@ export interface EntityFormField<T extends Record<string, string>> {
   readOnly?: boolean;
 }
 
-interface EntityFormProps<T extends Record<string, string>> {
+interface EntityFormProps<T extends StringFormValues<T>> {
   title: string;
   fields: EntityFormField<T>[];
   values: T;
@@ -30,7 +34,7 @@ interface EntityFormProps<T extends Record<string, string>> {
   onCancel?: () => void;
 }
 
-export function EntityForm<T extends Record<string, string>>({
+export function EntityForm<T extends StringFormValues<T>>({
   title,
   fields,
   values,
