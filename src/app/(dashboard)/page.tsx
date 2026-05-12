@@ -1,5 +1,5 @@
-import { ModuleHubPage } from "@/components/module-hub-page";
+import { redirect } from "next/navigation";
 
 export default function DashboardPage() {
-  return <ModuleHubPage />;
+  redirect("/apps");
 }
