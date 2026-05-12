@@ -1,0 +1,840 @@
+import {
+  liveAlerts,
+  modules,
+  schemaSections,
+  strategicPoints,
+  systemMetrics,
+  workflow,
+} from "@/lib/sats-data";
+import type {
+  ChatThreadRecord,
+  ConfigSettingRecord,
+  DomainMappingRecord,
+  AnimalRecord,
+  ClassificationSummary,
+  DeviceRecord,
+  ExportJobRecord,
+  FilterPresetRecord,
+  GeofenceEventItem,
+  HealthCaseRecord,
+  HealthTrendRecord,
+  ImportJobRecord,
+  LocalNodeRecord,
+  NotificationRecord,
+  OnboardingQueueRecord,
+  OrganizationRecord,
+  PermissionRecord,
+  QueryDefinitionRecord,
+  ReportRecord,
+  RoleRecord,
+  SecurityPolicyRecord,
+  SensorCapability,
+  SubscriptionSnapshot,
+  TrackingAsset,
+  UserAccountRecord,
+} from "@/types/sats-api";
+
+export const overviewSeed = {
+  hero: {
+    eyebrow: "Smart Animal Tracking System",
+    title:
+      "Wildlife operations command built for live tracking, health intelligence, and conservation response.",
+    description:
+      "SATS combines route-level operations, typed contracts, and backend service boundaries so the dashboard can evolve into a full conservation platform.",
+  },
+  quickStats: [
+    "IoT telemetry ingestion",
+    "AI-assisted health detection",
+    "Multi-organization governance",
+    "Geospatial video intelligence",
+  ],
+  metrics: systemMetrics,
+  modules,
+  workflow,
+  schemaSections,
+  alerts: liveAlerts,
+  strategicPoints,
+};
+
+export const trackingAssets: TrackingAsset[] = [
+  {
+    id: "track-001",
+    animalName: "Tembo North",
+    species: "Loxodonta africana",
+    deviceSerial: "SATS-EL-019",
+    region: "Northern Corridor",
+    latitude: -1.2842,
+    longitude: 36.8164,
+    speedKmh: 12.4,
+    geofenceStatus: "Border",
+    heartRateBpm: 34,
+    healthStatus: "Normal",
+    updatedAt: "2026-04-18T17:42:00Z",
+  },
+  {
+    id: "track-002",
+    animalName: "Nia Delta",
+    species: "Panthera leo",
+    deviceSerial: "SATS-LI-442",
+    region: "River Basin",
+    latitude: -1.3124,
+    longitude: 36.9012,
+    speedKmh: 4.8,
+    geofenceStatus: "Inside",
+    heartRateBpm: 58,
+    healthStatus: "At Risk",
+    updatedAt: "2026-04-18T17:39:00Z",
+  },
+  {
+    id: "track-003",
+    animalName: "Kifaru Echo",
+    species: "Diceros bicornis",
+    deviceSerial: "SATS-RH-231",
+    region: "Savannah East",
+    latitude: -1.2768,
+    longitude: 36.7422,
+    speedKmh: 2.1,
+    geofenceStatus: "Inside",
+    heartRateBpm: 41,
+    healthStatus: "Normal",
+    updatedAt: "2026-04-18T17:31:00Z",
+  },
+  {
+    id: "track-004",
+    animalName: "Swara Ridge",
+    species: "Acinonyx jubatus",
+    deviceSerial: "SATS-CH-088",
+    region: "Highland Watch",
+    latitude: -1.1984,
+    longitude: 36.8563,
+    speedKmh: 19.9,
+    geofenceStatus: "Outside",
+    heartRateBpm: 74,
+    healthStatus: "Critical",
+    updatedAt: "2026-04-18T17:28:00Z",
+  },
+];
+
+export const geofenceEvents: GeofenceEventItem[] = [
+  {
+    id: "geo-001",
+    parkName: "Northern Corridor",
+    animalName: "Tembo North",
+    status: "Border",
+    region: "Sector A3",
+    timestamp: "2026-04-18T17:40:00Z",
+  },
+  {
+    id: "geo-002",
+    parkName: "Highland Watch",
+    animalName: "Swara Ridge",
+    status: "Breach",
+    region: "Cliff Approach",
+    timestamp: "2026-04-18T17:24:00Z",
+  },
+  {
+    id: "geo-003",
+    parkName: "River Basin",
+    animalName: "Nia Delta",
+    status: "Inside",
+    region: "Waterline 2",
+    timestamp: "2026-04-18T17:18:00Z",
+  },
+];
+
+export const animals: AnimalRecord[] = [
+  {
+    id: "animal-001",
+    animalNumber: "AN-00019",
+    commonName: "Tembo North",
+    species: "Loxodonta africana",
+    conservationStatus: "Endangered",
+    assignedDevice: "SATS-EL-019",
+    healthStatus: "Normal",
+    location: "Northern Corridor",
+  },
+  {
+    id: "animal-002",
+    animalNumber: "AN-00442",
+    commonName: "Nia Delta",
+    species: "Panthera leo",
+    conservationStatus: "Vulnerable",
+    assignedDevice: "SATS-LI-442",
+    healthStatus: "At Risk",
+    location: "River Basin",
+  },
+  {
+    id: "animal-003",
+    animalNumber: "AN-00231",
+    commonName: "Kifaru Echo",
+    species: "Diceros bicornis",
+    conservationStatus: "Critically Endangered",
+    assignedDevice: "SATS-RH-231",
+    healthStatus: "Normal",
+    location: "Savannah East",
+  },
+  {
+    id: "animal-004",
+    animalNumber: "AN-00088",
+    commonName: "Swara Ridge",
+    species: "Acinonyx jubatus",
+    conservationStatus: "Vulnerable",
+    assignedDevice: "SATS-CH-088",
+    healthStatus: "Critical",
+    location: "Highland Watch",
+  },
+];
+
+export const classifications: ClassificationSummary[] = [
+  {
+    id: "class-001",
+    commonName: "African Elephant",
+    species: "Loxodonta africana",
+    conservationStatus: "Endangered",
+    trackedCount: 182,
+  },
+  {
+    id: "class-002",
+    commonName: "Lion",
+    species: "Panthera leo",
+    conservationStatus: "Vulnerable",
+    trackedCount: 94,
+  },
+  {
+    id: "class-003",
+    commonName: "Black Rhinoceros",
+    species: "Diceros bicornis",
+    conservationStatus: "Critically Endangered",
+    trackedCount: 37,
+  },
+  {
+    id: "class-004",
+    commonName: "Cheetah",
+    species: "Acinonyx jubatus",
+    conservationStatus: "Vulnerable",
+    trackedCount: 58,
+  },
+];
+
+export const devices: DeviceRecord[] = [
+  {
+    id: "device-001",
+    serial: "SATS-EL-019",
+    category: "Collar",
+    communicationType: "Hybrid",
+    firmwareVersion: "v4.8.1",
+    batteryPercentage: 73,
+    status: "Active",
+    assignedAnimal: "Tembo North",
+  },
+  {
+    id: "device-002",
+    serial: "SATS-LI-442",
+    category: "Collar",
+    communicationType: "GSM",
+    firmwareVersion: "v4.7.3",
+    batteryPercentage: 14,
+    status: "Maintenance",
+    assignedAnimal: "Nia Delta",
+  },
+  {
+    id: "device-003",
+    serial: "SATS-RH-231",
+    category: "Tag",
+    communicationType: "LoRa",
+    firmwareVersion: "v5.0.0",
+    batteryPercentage: 88,
+    status: "Active",
+    assignedAnimal: "Kifaru Echo",
+  },
+  {
+    id: "device-004",
+    serial: "SATS-CH-088",
+    category: "Implantable",
+    communicationType: "Satellite",
+    firmwareVersion: "v4.9.5",
+    batteryPercentage: 41,
+    status: "Faulty",
+    assignedAnimal: "Swara Ridge",
+  },
+];
+
+export const sensorCatalog: SensorCapability[] = [
+  {
+    id: "sensor-001",
+    sensorName: "Heart Rate",
+    unit: "bpm",
+    description:
+      "Continuous cardiac monitoring for stress and health modeling.",
+  },
+  {
+    id: "sensor-002",
+    sensorName: "Body Temperature",
+    unit: "C",
+    description: "Core temperature trends for illness and injury detection.",
+  },
+  {
+    id: "sensor-003",
+    sensorName: "SpO2",
+    unit: "%",
+    description: "Blood oxygen insight for respiratory distress tracking.",
+  },
+  {
+    id: "sensor-004",
+    sensorName: "Accelerometer",
+    unit: "g",
+    description: "Activity, gait, and movement anomaly classification.",
+  },
+];
+
+export const organizations: OrganizationRecord[] = [
+  {
+    id: "org-001",
+    organizationName: "Tsavo Conservation Authority",
+    location: "Kenya",
+    domain: "tsavo.sats.local",
+    subscriptionStatus: "Active",
+    activeAnimals: 642,
+    activeDevices: 488,
+    contactPerson: "Dr. Leah Muli",
+  },
+  {
+    id: "org-002",
+    organizationName: "Savannah Research Institute",
+    location: "Tanzania",
+    domain: "sri.sats.local",
+    subscriptionStatus: "Trial",
+    activeAnimals: 214,
+    activeDevices: 167,
+    contactPerson: "Amani Kweka",
+  },
+  {
+    id: "org-003",
+    organizationName: "Rift Valley Wildlife Enterprise",
+    location: "Kenya",
+    domain: "rift.sats.local",
+    subscriptionStatus: "Active",
+    activeAnimals: 931,
+    activeDevices: 713,
+    contactPerson: "Grace Ombura",
+  },
+];
+
+export const subscriptions: SubscriptionSnapshot[] = [
+  {
+    id: "sub-001",
+    organizationName: "Tsavo Conservation Authority",
+    planName: "Enterprise Ranger",
+    aiLevel: "Advanced",
+    videoEnabled: true,
+    retentionMonths: 24,
+  },
+  {
+    id: "sub-002",
+    organizationName: "Savannah Research Institute",
+    planName: "Research Pilot",
+    aiLevel: "Standard",
+    videoEnabled: false,
+    retentionMonths: 12,
+  },
+  {
+    id: "sub-003",
+    organizationName: "Rift Valley Wildlife Enterprise",
+    planName: "Operations Plus",
+    aiLevel: "Advanced",
+    videoEnabled: true,
+    retentionMonths: 18,
+  },
+];
+
+export const localNodes: LocalNodeRecord[] = [
+  {
+    id: "node-001",
+    organizationName: "Tsavo Conservation Authority",
+    nodeName: "Control Room Alpha",
+    status: "Online",
+    softwareVersion: "2.6.4",
+    lastSeenAt: "2026-04-18T17:38:00Z",
+  },
+  {
+    id: "node-002",
+    organizationName: "Savannah Research Institute",
+    nodeName: "Field Base Delta",
+    status: "Syncing",
+    softwareVersion: "2.6.1",
+    lastSeenAt: "2026-04-18T17:33:00Z",
+  },
+  {
+    id: "node-003",
+    organizationName: "Rift Valley Wildlife Enterprise",
+    nodeName: "Ops Hub West",
+    status: "Online",
+    softwareVersion: "2.6.4",
+    lastSeenAt: "2026-04-18T17:36:00Z",
+  },
+];
+
+export const reports: ReportRecord[] = [
+  {
+    id: "report-001",
+    title: "Quarterly Elephant Corridor Movement",
+    reportType: "Migration Pattern",
+    format: "PDF",
+    period: "Q1 2026",
+    generatedAt: "2026-04-17T09:10:00Z",
+    status: "Published",
+  },
+  {
+    id: "report-002",
+    title: "Predator Health Anomaly Digest",
+    reportType: "Health Analytics",
+    format: "Excel",
+    period: "Apr 2026",
+    generatedAt: "2026-04-18T07:25:00Z",
+    status: "Queued",
+  },
+  {
+    id: "report-003",
+    title: "Low Battery and Device Reliability Review",
+    reportType: "Device Performance",
+    format: "CSV",
+    period: "Apr 2026",
+    generatedAt: "2026-04-18T11:40:00Z",
+    status: "Published",
+  },
+];
+
+export const userAccounts: UserAccountRecord[] = [
+  {
+    id: "user-001",
+    name: "Amina Njoroge",
+    email: "amina@sats.local",
+    phone: "+254700000101",
+    status: "Active",
+    organizationName: "SATS Platform Authority",
+    tier: "system-administrator",
+    lastLogin: "2026-04-18T09:10:00Z",
+    roles: ["System Admin", "Global Auditor"],
+  },
+  {
+    id: "user-002",
+    name: "Dr. Leah Muli",
+    email: "leah@tsavo.sats.local",
+    phone: "+254700000102",
+    status: "Active",
+    organizationName: "Tsavo Conservation Authority",
+    tier: "organization-administrator",
+    lastLogin: "2026-04-18T08:42:00Z",
+    roles: ["Organization Admin", "Veterinarian Lead"],
+  },
+  {
+    id: "user-003",
+    name: "Amani Kweka",
+    email: "amani@sri.sats.local",
+    phone: "+255700000103",
+    status: "Active",
+    organizationName: "Savannah Research Institute",
+    tier: "organization-administrator",
+    lastLogin: "2026-04-18T07:55:00Z",
+    roles: ["Organization Admin"],
+  },
+  {
+    id: "user-004",
+    name: "Ranger Otieno",
+    email: "otieno@tsavo.sats.local",
+    phone: "+254700000104",
+    status: "Active",
+    organizationName: "Tsavo Conservation Authority",
+    tier: "operator",
+    lastLogin: "2026-04-18T09:02:00Z",
+    roles: ["Ranger"],
+  },
+];
+
+export const roleCatalog: RoleRecord[] = [
+  {
+    id: "role-001",
+    name: "System Admin",
+    scope: "System",
+    isGlobal: true,
+    memberCount: 4,
+    organizationName: "SATS Platform Authority",
+    description: "Full control over tenants, domains, security policies, and backend governance.",
+  },
+  {
+    id: "role-002",
+    name: "Organization Admin",
+    scope: "Cross-organization",
+    isGlobal: false,
+    memberCount: 12,
+    organizationName: "Tenant organizations",
+    description: "Controls users, subscriptions, modules, and operational configuration inside one organization.",
+  },
+  {
+    id: "role-003",
+    name: "Ranger",
+    scope: "Organization",
+    isGlobal: false,
+    memberCount: 48,
+    organizationName: "Field operations",
+    description: "Field operator access for movement monitoring, incidents, and task execution.",
+  },
+  {
+    id: "role-004",
+    name: "Veterinarian Lead",
+    scope: "Organization",
+    isGlobal: false,
+    memberCount: 6,
+    organizationName: "Clinical operations",
+    description: "Health analytics oversight, anomaly response, and clinical follow-up.",
+  },
+];
+
+export const permissionCatalog: PermissionRecord[] = [
+  {
+    id: "perm-001",
+    moduleName: "User Management",
+    action: "Create",
+    scope: "Cross-organization",
+    assignedRoles: ["System Admin", "Organization Admin"],
+  },
+  {
+    id: "perm-002",
+    moduleName: "Administrator",
+    action: "Manage Domains",
+    scope: "System",
+    assignedRoles: ["System Admin"],
+  },
+  {
+    id: "perm-003",
+    moduleName: "Tracking",
+    action: "View Live",
+    scope: "Organization",
+    assignedRoles: ["Organization Admin", "Ranger"],
+  },
+  {
+    id: "perm-004",
+    moduleName: "Health",
+    action: "Review Alerts",
+    scope: "Organization",
+    assignedRoles: ["Organization Admin", "Veterinarian Lead"],
+  },
+];
+
+export const domainMappings: DomainMappingRecord[] = [
+  {
+    id: "domain-001",
+    organizationName: "Tsavo Conservation Authority",
+    domain: "tsavo.sats.local",
+    status: "Active",
+    sslStatus: "Valid",
+    lastCheckedAt: "2026-04-18T07:30:00Z",
+  },
+  {
+    id: "domain-002",
+    organizationName: "Savannah Research Institute",
+    domain: "sri.sats.local",
+    status: "Pending DNS",
+    sslStatus: "Provisioning",
+    lastCheckedAt: "2026-04-18T06:20:00Z",
+  },
+  {
+    id: "domain-003",
+    organizationName: "Rift Valley Wildlife Enterprise",
+    domain: "rift.sats.local",
+    status: "Active",
+    sslStatus: "Valid",
+    lastCheckedAt: "2026-04-18T07:45:00Z",
+  },
+];
+
+export const onboardingQueue: OnboardingQueueRecord[] = [
+  {
+    id: "onboard-001",
+    organizationName: "Savannah Research Institute",
+    stage: "Domain configuration",
+    owner: "Amina Njoroge",
+    requestedAt: "2026-04-17T15:10:00Z",
+    notes: "Waiting on DNS verification and branding assets upload.",
+  },
+  {
+    id: "onboard-002",
+    organizationName: "Mara Wildlife Trust",
+    stage: "Subscription approval",
+    owner: "Amina Njoroge",
+    requestedAt: "2026-04-18T08:05:00Z",
+    notes: "Enterprise onboarding scheduled for Monday control-room rollout.",
+  },
+];
+
+export const healthCases: HealthCaseRecord[] = [
+  {
+    id: "health-001",
+    animalName: "Nia Delta",
+    organizationName: "Tsavo Conservation Authority",
+    healthStatus: "At Risk",
+    detectedIssue: "Stress response and temperature elevation",
+    confidenceScore: 0.91,
+    lastReadingAt: "2026-04-18T08:58:00Z",
+    assignedVeterinarian: "Dr. Leah Muli",
+  },
+  {
+    id: "health-002",
+    animalName: "Swara Ridge",
+    organizationName: "Tsavo Conservation Authority",
+    healthStatus: "Critical",
+    detectedIssue: "Severe activity spike and injury suspicion",
+    confidenceScore: 0.96,
+    lastReadingAt: "2026-04-18T09:04:00Z",
+    assignedVeterinarian: "Dr. Leah Muli",
+  },
+  {
+    id: "health-003",
+    animalName: "Kifaru Echo",
+    organizationName: "Rift Valley Wildlife Enterprise",
+    healthStatus: "Normal",
+    detectedIssue: "No anomaly detected",
+    confidenceScore: 0.88,
+    lastReadingAt: "2026-04-18T08:52:00Z",
+    assignedVeterinarian: "Grace Ombura",
+  },
+];
+
+export const healthTrends: HealthTrendRecord[] = [
+  {
+    id: "trend-001",
+    metric: "Average heart rate",
+    window: "Last 24 hours",
+    baseline: "46 bpm",
+    current: "51 bpm",
+    trend: "Rising in predator cohort",
+  },
+  {
+    id: "trend-002",
+    metric: "Temperature anomalies",
+    window: "Last 7 days",
+    baseline: "2 events",
+    current: "6 events",
+    trend: "Clustered in Northern Corridor",
+  },
+  {
+    id: "trend-003",
+    metric: "Activity stability",
+    window: "Last 12 hours",
+    baseline: "89% normal",
+    current: "82% normal",
+    trend: "Minor decline near border zones",
+  },
+];
+
+export const notificationCenter: NotificationRecord[] = [
+  {
+    id: "notice-001",
+    type: "Health Alert",
+    severity: "Critical",
+    status: "Unread",
+    moduleName: "Health",
+    organizationName: "Tsavo Conservation Authority",
+    recipient: "Veterinarian desk",
+    message: "Swara Ridge flagged critical with injury suspicion and high activity anomaly.",
+    createdAt: "2026-04-18T09:05:00Z",
+  },
+  {
+    id: "notice-002",
+    type: "Geofence Alert",
+    severity: "Warning",
+    status: "Acknowledged",
+    moduleName: "Tracking",
+    organizationName: "Tsavo Conservation Authority",
+    recipient: "Ranger team alpha",
+    message: "Tembo North moved into border zone Sector A3.",
+    createdAt: "2026-04-18T08:44:00Z",
+  },
+  {
+    id: "notice-003",
+    type: "Device Alert",
+    severity: "Warning",
+    status: "Resolved",
+    moduleName: "Devices",
+    organizationName: "Savannah Research Institute",
+    recipient: "Hardware desk",
+    message: "Collar SATS-LI-442 battery replacement scheduled and acknowledged.",
+    createdAt: "2026-04-18T07:16:00Z",
+  },
+];
+
+export const chatThreads: ChatThreadRecord[] = [
+  {
+    id: "thread-001",
+    channelName: "Ranger Alpha / Vet Desk",
+    participants: "4 participants",
+    lastMessage: "Field team dispatched to check Swara Ridge movement anomaly.",
+    unreadCount: 3,
+    updatedAt: "2026-04-18T09:03:00Z",
+  },
+  {
+    id: "thread-002",
+    channelName: "Tenant Onboarding",
+    participants: "3 participants",
+    lastMessage: "Savannah Research Institute branding assets approved.",
+    unreadCount: 1,
+    updatedAt: "2026-04-18T08:12:00Z",
+  },
+];
+
+export const filterPresets: FilterPresetRecord[] = [
+  {
+    id: "filter-001",
+    name: "Critical health cases",
+    targetModule: "Health",
+    criteriaCount: 4,
+    scope: "Cross-organization",
+    owner: "Amina Njoroge",
+    lastUsedAt: "2026-04-18T08:58:00Z",
+  },
+  {
+    id: "filter-002",
+    name: "Border geofence events",
+    targetModule: "Tracking",
+    criteriaCount: 3,
+    scope: "Organization",
+    owner: "Ranger Otieno",
+    lastUsedAt: "2026-04-18T08:44:00Z",
+  },
+  {
+    id: "filter-003",
+    name: "Low battery devices",
+    targetModule: "Devices",
+    criteriaCount: 2,
+    scope: "Organization",
+    owner: "Dr. Leah Muli",
+    lastUsedAt: "2026-04-18T07:15:00Z",
+  },
+];
+
+export const queryDefinitions: QueryDefinitionRecord[] = [
+  {
+    id: "query-001",
+    name: "Critical telemetry sweep",
+    target: "Alerts API",
+    expression: "healthStatus = 'Critical' AND unread = true",
+    status: "Active",
+  },
+  {
+    id: "query-002",
+    name: "Tenant battery drift",
+    target: "Devices API",
+    expression: "batteryPercentage < 20 AND organizationScope = selectedTenant",
+    status: "Active",
+  },
+  {
+    id: "query-003",
+    name: "Dormant field nodes",
+    target: "Organization API",
+    expression: "lastSeenAt > 6h AND status != 'Online'",
+    status: "Draft",
+  },
+];
+
+export const importJobs: ImportJobRecord[] = [
+  {
+    id: "import-001",
+    entityType: "Animals",
+    fileName: "tsavo-elephants-q2.csv",
+    status: "Completed",
+    totalRecords: 320,
+    successfulRecords: 318,
+    failedRecords: 2,
+    createdAt: "2026-04-17T13:00:00Z",
+  },
+  {
+    id: "import-002",
+    entityType: "Historical Tracking",
+    fileName: "corridor-playback-apr.zip",
+    status: "Processing",
+    totalRecords: 18400,
+    successfulRecords: 12600,
+    failedRecords: 0,
+    createdAt: "2026-04-18T08:20:00Z",
+  },
+  {
+    id: "import-003",
+    entityType: "Users",
+    fileName: "sri-tenants-users.xlsx",
+    status: "Failed",
+    totalRecords: 44,
+    successfulRecords: 31,
+    failedRecords: 13,
+    createdAt: "2026-04-18T06:45:00Z",
+  },
+];
+
+export const exportJobs: ExportJobRecord[] = [
+  {
+    id: "export-001",
+    name: "Quarterly conservation audit",
+    format: "PDF",
+    status: "Published",
+    requestedBy: "Amina Njoroge",
+    createdAt: "2026-04-17T17:10:00Z",
+  },
+  {
+    id: "export-002",
+    name: "Device reliability extract",
+    format: "CSV",
+    status: "Queued",
+    requestedBy: "Grace Ombura",
+    createdAt: "2026-04-18T08:50:00Z",
+  },
+];
+
+export const configSettings: ConfigSettingRecord[] = [
+  {
+    id: "setting-001",
+    category: "Authentication",
+    name: "Two-factor authentication",
+    value: "Enabled for system and org admins",
+    scope: "System",
+    lastUpdatedAt: "2026-04-17T16:30:00Z",
+  },
+  {
+    id: "setting-002",
+    category: "Synchronization",
+    name: "Telemetry sync interval",
+    value: "15 seconds",
+    scope: "Cross-organization",
+    lastUpdatedAt: "2026-04-18T06:10:00Z",
+  },
+  {
+    id: "setting-003",
+    category: "Branding",
+    name: "Default theme mode",
+    value: "Organization-managed light mode",
+    scope: "Cross-organization",
+    lastUpdatedAt: "2026-04-18T07:02:00Z",
+  },
+];
+
+export const securityPolicies: SecurityPolicyRecord[] = [
+  {
+    id: "policy-001",
+    policyName: "Admin session timeout",
+    status: "Enforced",
+    enforcementLevel: "30 minutes",
+    lastUpdatedAt: "2026-04-17T15:40:00Z",
+  },
+  {
+    id: "policy-002",
+    policyName: "Tenant domain verification",
+    status: "Enforced",
+    enforcementLevel: "DNS + SSL required",
+    lastUpdatedAt: "2026-04-18T08:00:00Z",
+  },
+  {
+    id: "policy-003",
+    policyName: "Audit log retention",
+    status: "Monitored",
+    enforcementLevel: "24 months",
+    lastUpdatedAt: "2026-04-16T10:20:00Z",
+  },
+];
