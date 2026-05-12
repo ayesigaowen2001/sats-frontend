@@ -25,6 +25,12 @@ export interface SessionData {
     status: string;
     is_system_admin: boolean;
     is_node: boolean;
+    phone?: string | null;
+    organization_id?: string | null;
+    granted_by?: string | null;
+    granted_at?: string | null;
+    admin_notes?: string | null;
+    last_login?: string | null;
   };
   loginTime: number; // Unix timestamp when user logged in
 }
@@ -78,6 +84,10 @@ export function getSessionData(): SessionData | null {
 
   const data = window.localStorage.getItem(SESSION_DATA_KEY);
   return data ? JSON.parse(data) : null;
+}
+
+export function getUserOrganizationId(): string {
+  return getSessionData()?.user.organization_id ?? "";
 }
 
 export function getTokenExpiryTime(): number | null {

@@ -1,4 +1,4 @@
-import { getAccessToken } from "@/lib/auth-tokens";
+import { getAccessToken, getSessionData } from "@/lib/auth-tokens";
 import { appConfig } from "@/lib/config";
 import type { CrudRepository } from "@/lib/crud/contracts";
 import { HttpCrudRepository } from "@/lib/crud/http-crud-repository";
@@ -80,8 +80,43 @@ export class OrganizationCrudService {
     >,
   ) {}
 
-  listOrganizations() {
-    return this.repository.list();
+  async listOrganizations() {
+    const sessionData = getSessionData();
+    const isSystemAdmin = Boolean(sessionData?.user.is_system_admin);
+    const accessToken = getAccessToken();
+
+    if (isSystemAdmin || !accessToken) {
+      return this.repository.list();
+    }
+
+    const response = await fetch(`${appConfig.apiBaseUrl}/organisations/me`, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to load organization: ${response.status}`);
+    }
+
+    const item = (await response.json()) as OrganizationApiModel;
+    return [
+      {
+        id: item.id,
+        organization_name: item.organization_name,
+        location: item.location,
+        country: item.country,
+        domain: item.domain,
+        contact_person: item.contact_person,
+        email: item.email,
+        phone: item.phone,
+        subscription_status: item.subscription_status,
+        subscription_expiry: item.subscription_expiry,
+      },
+    ];
   }
 
   getOrganizationById(id: string) {

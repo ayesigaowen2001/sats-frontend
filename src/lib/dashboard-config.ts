@@ -388,9 +388,9 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         description: "Video command overview and stream health.",
       },
       {
-        label: "Live Cameras",
+        label: "Live Stream",
         href: "/video/live",
-        description: "Monitor active camera feeds.",
+        description: "Stream active camera feeds and tune live view settings.",
       },
       {
         label: "Video Archive",
@@ -411,6 +411,11 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         label: "Video Settings",
         href: "/video/settings",
         description: "Manage retention and stream behavior.",
+      },
+      {
+        label: "Camera Management",
+        href: "/video/cameras",
+        description: "Create, update, and manage field cameras.",
       },
     ],
   },

@@ -1,4 +1,4 @@
-import { getAccessToken } from "@/lib/auth-tokens";
+import { getAccessToken, getUserOrganizationId } from "@/lib/auth-tokens";
 import { appConfig } from "@/lib/config";
 
 interface UserApiModel {
@@ -105,20 +105,34 @@ function mapUser(item: UserApiModel): UserRecord {
 }
 
 export class UserService {
+  private buildHeaders(includeContentType = true): Headers {
+    const accessToken = getAccessToken();
+    const organizationId = getUserOrganizationId();
+    const headers = new Headers({
+      Accept: "application/json",
+    });
+
+    if (includeContentType) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    if (organizationId) {
+      headers.set("organization_id", organizationId);
+    }
+
+    return headers;
+  }
+
   async listUsers(
     page = 1,
     perPage = 20,
     filters: UserListFilters = {},
   ): Promise<UserListResult> {
-    const accessToken = getAccessToken();
-    const headers = new Headers({
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    });
-
-    if (accessToken) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
-    }
+    const headers = this.buildHeaders(true);
 
     const query = new URLSearchParams();
     query.set("page", String(page));
@@ -167,15 +181,7 @@ export class UserService {
     orgId: string,
     input: CreateOrganizationUserInput,
   ): Promise<void> {
-    const accessToken = getAccessToken();
-    const headers = new Headers({
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    });
-
-    if (accessToken) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
-    }
+    const headers = this.buildHeaders(true);
 
     const response = await fetch(
       `${appConfig.apiBaseUrl}/users/organisations/${encodeURIComponent(orgId)}`,
@@ -192,15 +198,7 @@ export class UserService {
   }
 
   async createSystemAdmin(input: CreateSystemAdminInput): Promise<void> {
-    const accessToken = getAccessToken();
-    const headers = new Headers({
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    });
-
-    if (accessToken) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
-    }
+    const headers = this.buildHeaders(true);
 
     const response = await fetch(`${appConfig.apiBaseUrl}/users/admin`, {
       method: "POST",
@@ -219,15 +217,7 @@ export class UserService {
     userId: string,
     input: UpdateNodeAccountInput,
   ): Promise<void> {
-    const accessToken = getAccessToken();
-    const headers = new Headers({
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    });
-
-    if (accessToken) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
-    }
+    const headers = this.buildHeaders(true);
 
     const response = await fetch(
       `${appConfig.apiBaseUrl}/users/nodes/${encodeURIComponent(userId)}`,
@@ -244,14 +234,7 @@ export class UserService {
   }
 
   async deleteUser(userId: string): Promise<void> {
-    const accessToken = getAccessToken();
-    const headers = new Headers({
-      Accept: "application/json",
-    });
-
-    if (accessToken) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
-    }
+    const headers = this.buildHeaders(false);
 
     const response = await fetch(
       `${appConfig.apiBaseUrl}/users/${encodeURIComponent(userId)}`,

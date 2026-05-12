@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResourceRowActions } from "@/components/common/resource-row-actions";
 import { DataTable } from "@/components/data-table";
 import { ResourceFeedback } from "@/components/resource-feedback";
+import { getSessionData } from "@/lib/auth-tokens";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
 import {
   geofencesService,
@@ -45,7 +46,7 @@ const mapboxDrawStyles: unknown[] = [
     paint: {
       "fill-color": "#3bb2d0",
       "fill-outline-color": "#3bb2d0",
-      "fill-opacity": 0.15,
+      "fill-opacity": 0.1,
     },
   },
   {
@@ -53,9 +54,18 @@ const mapboxDrawStyles: unknown[] = [
     type: "fill",
     filter: ["all", ["==", "active", "true"], ["==", "$type", "Polygon"]],
     paint: {
-      "fill-color": "#fbbf24",
-      "fill-outline-color": "#f59e0b",
-      "fill-opacity": 0.2,
+      "fill-color": "#fbb03b",
+      "fill-outline-color": "#fbb03b",
+      "fill-opacity": 0.1,
+    },
+  },
+  {
+    id: "gl-draw-polygon-midpoint",
+    type: "circle",
+    filter: ["all", ["==", "$type", "Point"], ["==", "meta", "midpoint"]],
+    paint: {
+      "circle-radius": 3,
+      "circle-color": "#fbb03b",
     },
   },
   {
@@ -67,55 +77,78 @@ const mapboxDrawStyles: unknown[] = [
       ["==", "$type", "Polygon"],
       ["!=", "mode", "static"],
     ],
-    layout: {
-      "line-cap": "round",
-      "line-join": "round",
-    },
-    paint: {
-      "line-color": "#3bb2d0",
-      "line-width": 2,
-    },
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#3bb2d0", "line-width": 2 },
   },
   {
     id: "gl-draw-polygon-stroke-active",
     type: "line",
     filter: ["all", ["==", "active", "true"], ["==", "$type", "Polygon"]],
-    layout: {
-      "line-cap": "round",
-      "line-join": "round",
-    },
+    layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": "#f59e0b",
+      "line-color": "#fbb03b",
+      "line-dasharray": [0.2, 2],
       "line-width": 2,
     },
   },
   {
-    id: "gl-draw-lines-inactive",
+    id: "gl-draw-line-inactive",
     type: "line",
-    filter: ["all", ["==", "active", "false"], ["==", "$type", "LineString"]],
-    layout: {
-      "line-cap": "round",
-      "line-join": "round",
-    },
-    paint: {
-      "line-color": "#3bb2d0",
-      "line-width": 2,
-      "line-dasharray": ["literal", [2, 1]],
-    },
+    filter: [
+      "all",
+      ["==", "active", "false"],
+      ["==", "$type", "LineString"],
+      ["!=", "mode", "static"],
+    ],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#3bb2d0", "line-width": 2 },
   },
   {
-    id: "gl-draw-lines-active",
+    id: "gl-draw-line-active",
     type: "line",
-    filter: ["all", ["==", "active", "true"], ["==", "$type", "LineString"]],
-    layout: {
-      "line-cap": "round",
-      "line-join": "round",
-    },
+    filter: ["all", ["==", "$type", "LineString"], ["==", "active", "true"]],
+    layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": "#f59e0b",
+      "line-color": "#fbb03b",
+      "line-dasharray": [0.2, 2],
       "line-width": 2,
-      "line-dasharray": ["literal", [1, 1]],
     },
+  },
+  // Vertex stroke (white outline)
+  {
+    id: "gl-draw-polygon-and-line-vertex-stroke-inactive",
+    type: "circle",
+    filter: [
+      "all",
+      ["==", "meta", "vertex"],
+      ["==", "$type", "Point"],
+      ["!=", "mode", "static"],
+    ],
+    paint: { "circle-radius": 5, "circle-color": "#fff" },
+  },
+  // Vertex fill
+  {
+    id: "gl-draw-polygon-and-line-vertex-inactive",
+    type: "circle",
+    filter: [
+      "all",
+      ["==", "meta", "vertex"],
+      ["==", "$type", "Point"],
+      ["!=", "mode", "static"],
+    ],
+    paint: { "circle-radius": 3, "circle-color": "#fbb03b" },
+  },
+  {
+    id: "gl-draw-point-point-stroke-inactive",
+    type: "circle",
+    filter: [
+      "all",
+      ["==", "active", "false"],
+      ["==", "$type", "Point"],
+      ["==", "meta", "feature"],
+      ["!=", "mode", "static"],
+    ],
+    paint: { "circle-radius": 5, "circle-opacity": 1, "circle-color": "#fff" },
   },
   {
     id: "gl-draw-point-inactive",
@@ -127,10 +160,18 @@ const mapboxDrawStyles: unknown[] = [
       ["==", "meta", "feature"],
       ["!=", "mode", "static"],
     ],
-    paint: {
-      "circle-radius": 4,
-      "circle-color": "#3bb2d0",
-    },
+    paint: { "circle-radius": 3, "circle-color": "#3bb2d0" },
+  },
+  {
+    id: "gl-draw-point-stroke-active",
+    type: "circle",
+    filter: [
+      "all",
+      ["==", "$type", "Point"],
+      ["==", "active", "true"],
+      ["!=", "meta", "midpoint"],
+    ],
+    paint: { "circle-radius": 7, "circle-color": "#fff" },
   },
   {
     id: "gl-draw-point-active",
@@ -138,31 +179,41 @@ const mapboxDrawStyles: unknown[] = [
     filter: [
       "all",
       ["==", "$type", "Point"],
+      ["!=", "meta", "midpoint"],
       ["==", "active", "true"],
-      ["==", "meta", "feature"],
     ],
+    paint: { "circle-radius": 5, "circle-color": "#fbb03b" },
+  },
+  // Static modes
+  {
+    id: "gl-draw-polygon-fill-static",
+    type: "fill",
+    filter: ["all", ["==", "mode", "static"], ["==", "$type", "Polygon"]],
     paint: {
-      "circle-radius": 6,
-      "circle-color": "#f59e0b",
+      "fill-color": "#404040",
+      "fill-outline-color": "#404040",
+      "fill-opacity": 0.1,
     },
   },
   {
-    id: "gl-draw-polygon-and-line-vertex-halo-active",
-    type: "circle",
-    filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
-    paint: {
-      "circle-radius": 8,
-      "circle-color": "#ffffff",
-    },
+    id: "gl-draw-polygon-stroke-static",
+    type: "line",
+    filter: ["all", ["==", "mode", "static"], ["==", "$type", "Polygon"]],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#404040", "line-width": 2 },
   },
   {
-    id: "gl-draw-polygon-and-line-vertex-active",
+    id: "gl-draw-line-static",
+    type: "line",
+    filter: ["all", ["==", "mode", "static"], ["==", "$type", "LineString"]],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#404040", "line-width": 2 },
+  },
+  {
+    id: "gl-draw-point-static",
     type: "circle",
-    filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
-    paint: {
-      "circle-radius": 5,
-      "circle-color": "#f59e0b",
-    },
+    filter: ["all", ["==", "mode", "static"], ["==", "$type", "Point"]],
+    paint: { "circle-radius": 5, "circle-color": "#404040" },
   },
 ];
 
@@ -234,7 +285,10 @@ function parseBoundaryCoordinates(raw: string): number[][][] {
   return [closed];
 }
 
-function toPayload(values: GeofenceFormValues): GeofenceInput {
+function toPayload(
+  values: GeofenceFormValues,
+  currentUserId: string,
+): GeofenceInput {
   if (!values.park_name.trim()) {
     throw new Error("Park name is required.");
   }
@@ -247,8 +301,12 @@ function toPayload(values: GeofenceFormValues): GeofenceInput {
     throw new Error("Description is required.");
   }
 
-  if (!values.created_by.trim()) {
+  if (!currentUserId.trim()) {
     throw new Error("Created by is required.");
+  }
+
+  if (!isUuid(currentUserId)) {
+    throw new Error("Created by must be a valid UUID.");
   }
 
   const coordinates = parseBoundaryCoordinates(values.boundary_coordinates);
@@ -260,7 +318,7 @@ function toPayload(values: GeofenceFormValues): GeofenceInput {
       coordinates,
     },
     description: values.description.trim(),
-    created_by: values.created_by.trim(),
+    created_by: currentUserId.trim(),
   };
 }
 
@@ -301,34 +359,6 @@ interface DrawEvent {
   features?: DrawFeature[];
 }
 
-type DrawControlPosition =
-  | "top-left"
-  | "top-right"
-  | "bottom-left"
-  | "bottom-right"
-  | "non-fixed";
-
-type ToolbarStyle = "light" | "dark";
-
-type ToolbarButtonOption =
-  | "draw-point"
-  | "draw-line"
-  | "draw-polygon"
-  | "trash"
-  | "combine-features"
-  | "uncombine-features";
-
-type ToolbarNumColumns = 1 | 2 | 3 | 4 | 5 | "Infinity";
-
-type DrawControlsConfig = {
-  point: boolean;
-  line_string: boolean;
-  polygon: boolean;
-  trash: boolean;
-  combine_features: boolean;
-  uncombine_features: boolean;
-};
-
 type MapInstance = {
   addControl: (control: unknown, position?: string) => void;
   removeControl: (control: unknown) => void;
@@ -344,8 +374,16 @@ type DrawInstance = {
   getAll: () => DrawCollection;
   deleteAll: () => void;
   add: (feature: unknown) => void;
-  set: (featureCollection: DrawCollection) => void;
   changeMode: (mode: string, options?: Record<string, unknown>) => void;
+};
+
+type DrawControlsConfig = {
+  point: boolean;
+  line_string: boolean;
+  polygon: boolean;
+  trash: boolean;
+  combine_features: boolean;
+  uncombine_features: boolean;
 };
 
 type DrawConstructor = new (options: {
@@ -354,27 +392,14 @@ type DrawConstructor = new (options: {
   styles: unknown[];
 }) => DrawInstance;
 
-const defaultToolbarButtons: ToolbarButtonOption[] = [
-  "draw-point",
-  "draw-line",
-  "draw-polygon",
-  "trash",
-  "combine-features",
-  "uncombine-features",
-];
-
-function toDrawControls(buttons: ToolbarButtonOption[]): DrawControlsConfig {
-  const selected = new Set(buttons);
-
-  return {
-    point: selected.has("draw-point"),
-    line_string: selected.has("draw-line"),
-    polygon: selected.has("draw-polygon"),
-    trash: selected.has("trash"),
-    combine_features: selected.has("combine-features"),
-    uncombine_features: selected.has("uncombine-features"),
-  };
-}
+const drawControls: DrawControlsConfig = {
+  point: false,
+  line_string: true,
+  polygon: true,
+  trash: true,
+  combine_features: false,
+  uncombine_features: false,
+};
 
 function isValidFeatureId(id: unknown): id is string | number {
   if (typeof id === "string") {
@@ -388,27 +413,23 @@ function isValidFeatureId(id: unknown): id is string | number {
   return false;
 }
 
-export default function TrackingGeofencesPageView(): React.JSX.Element {
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim(),
+  );
+}
+
+export function TrackingGeofencesPageView(): React.JSX.Element {
   const { user } = useAuthStore();
+
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const inlineToolbarContainerRef = useRef<HTMLDivElement | null>(null);
-  const testToolbarContainerRef = useRef<HTMLDivElement | null>(null);
   const drawToolbarRef = useRef<HTMLDivElement | null>(null);
-  const editToolbarButtonRef = useRef<HTMLButtonElement | null>(null);
-  const isSwitchingToLineModeRef = useRef(false);
+  const drawSyncDebounceTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const DrawConstructorRef = useRef<DrawConstructor | null>(null);
-  const isMapLoadedRef = useRef(false);
   const mapRef = useRef<MapInstance | null>(null);
   const drawRef = useRef<DrawInstance | null>(null);
-
-  // Stable refs for callbacks — updated every render so map/toolbar event
-  // listeners always invoke the latest version without causing the map to
-  // be destroyed and recreated whenever state changes.
-  const handleDrawCreateRef = useRef<(event?: DrawEvent) => void>(() => {});
-  const handleDrawSyncRef = useRef<() => void>(() => {});
-  const recreateDrawToolbarRef = useRef<() => void>(() => {});
-  const ensureEditToolbarButtonRef = useRef<() => void>(() => {});
-  const refreshToolbarPlacementRef = useRef<() => void>(() => {});
 
   const [rows, setRows] = useState<Geofence[] | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -434,31 +455,43 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
   const [deleteError, setDeleteError] = useState("");
   const [deleteSuccess, setDeleteSuccess] = useState("");
 
-  const [toolbarButtons, setToolbarButtons] = useState<ToolbarButtonOption[]>(
-    defaultToolbarButtons,
-  );
-  const [toolbarNumColumns, setToolbarNumColumns] =
-    useState<ToolbarNumColumns>("Infinity");
-  const [toolbarPosition, setToolbarPosition] =
-    useState<DrawControlPosition>("non-fixed");
-  const [toolbarStyle, setToolbarStyle] = useState<ToolbarStyle>("light");
-  const [toolbarVisible, setToolbarVisible] = useState(true);
-  const [showToolbarInTestArea, setShowToolbarInTestArea] = useState(false);
   const [testAreaOutput, setTestAreaOutput] = useState("");
   const [canEditPolygon, setCanEditPolygon] = useState(false);
 
+  const selectedOrganization = useMemo(
+    () => organizations.find((org) => org.id === selectedOrgId) ?? null,
+    [organizations, selectedOrgId],
+  );
+
+  const currentUserId = useMemo(() => {
+    const sessionUserId = getSessionData()?.user.id ?? "";
+    if (isUuid(sessionUserId)) {
+      return sessionUserId;
+    }
+
+    if (isUuid(user.id)) {
+      return user.id;
+    }
+
+    return "";
+  }, [user.id]);
+
   useEffect(() => {
-    if (!user.id) {
+    if (!currentUserId) {
       return;
     }
 
     setCreateValues((prev) =>
-      prev.created_by ? prev : { ...prev, created_by: user.id },
+      !prev.created_by || !isUuid(prev.created_by)
+        ? { ...prev, created_by: currentUserId }
+        : prev,
     );
     setUpdateValues((prev) =>
-      prev.created_by ? prev : { ...prev, created_by: user.id },
+      !prev.created_by || !isUuid(prev.created_by)
+        ? { ...prev, created_by: currentUserId }
+        : prev,
     );
-  }, [user.id]);
+  }, [currentUserId]);
 
   const clearActionMessages = () => {
     setCreateError("");
@@ -481,23 +514,186 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
   const applyDrawCoordinatesToActiveForm = useCallback(
     (coordinatesJson: string) => {
       if (editingGeofence) {
-        setUpdateValues((prev) => ({
-          ...prev,
-          boundary_coordinates: coordinatesJson,
-        }));
+        setUpdateValues((prev) =>
+          prev.boundary_coordinates === coordinatesJson
+            ? prev
+            : {
+                ...prev,
+                boundary_coordinates: coordinatesJson,
+              },
+        );
         return;
       }
 
-      setCreateValues((prev) => ({
-        ...prev,
-        boundary_coordinates: coordinatesJson,
-      }));
+      setCreateValues((prev) =>
+        prev.boundary_coordinates === coordinatesJson
+          ? prev
+          : {
+              ...prev,
+              boundary_coordinates: coordinatesJson,
+            },
+      );
     },
     [editingGeofence],
   );
 
-  const toFeatureCollectionJson = useCallback((coordinates: number[][][]) => {
-    return JSON.stringify(
+  const getDrawnPolygonCoordinates = useCallback((): number[][][] | null => {
+    const draw = drawRef.current;
+    console.log(
+      "[geofences] getDrawnPolygonCoordinates called, draw ref:",
+      draw,
+    );
+
+    if (!draw) {
+      console.warn("[geofences] getDrawnPolygonCoordinates: drawRef is null");
+      return null;
+    }
+
+    const allFeatures = draw.getAll();
+    console.log("[geofences] draw.getAll():", JSON.stringify(allFeatures));
+
+    const polygonFeature = allFeatures.features
+      ?.filter((feature) => feature.geometry?.type === "Polygon")
+      .at(-1);
+
+    console.log("[geofences] polygonFeature:", JSON.stringify(polygonFeature));
+
+    if (!polygonFeature?.geometry?.coordinates) {
+      console.warn(
+        "[geofences] getDrawnPolygonCoordinates: no polygon geometry/coordinates",
+      );
+      return null;
+    }
+
+    const polygonCoordinates = polygonFeature.geometry.coordinates;
+
+    if (!Array.isArray(polygonCoordinates) || polygonCoordinates.length === 0) {
+      console.warn(
+        "[geofences] getDrawnPolygonCoordinates: polygonCoordinates is empty or not an array",
+        polygonCoordinates,
+      );
+      return null;
+    }
+
+    const ring = polygonCoordinates[0];
+    if (!Array.isArray(ring)) {
+      console.warn(
+        "[geofences] getDrawnPolygonCoordinates: ring is not an array",
+        ring,
+      );
+      return null;
+    }
+
+    const normalizedRing = ring
+      .map((point) => {
+        if (!Array.isArray(point) || point.length < 2) {
+          return null;
+        }
+
+        const lng = Number(point[0]);
+        const lat = Number(point[1]);
+
+        if (Number.isNaN(lng) || Number.isNaN(lat)) {
+          return null;
+        }
+
+        return [lng, lat];
+      })
+      .filter((point): point is number[] => Array.isArray(point));
+
+    console.log(
+      "[geofences] normalizedRing length:",
+      normalizedRing.length,
+      "points:",
+      normalizedRing,
+    );
+
+    if (normalizedRing.length < 3) {
+      console.warn(
+        "[geofences] getDrawnPolygonCoordinates: not enough vertices (",
+        normalizedRing.length,
+        ")",
+      );
+      return null;
+    }
+
+    const result = [ensureClosedLinearRing(normalizedRing)];
+    console.log(
+      "[geofences] getDrawnPolygonCoordinates result:",
+      JSON.stringify(result),
+    );
+    return result;
+  }, []);
+
+  const loadPolygonIntoDraw = useCallback((coordinates: number[][][]) => {
+    const draw = drawRef.current;
+    console.log(
+      "[geofences] loadPolygonIntoDraw called, draw ref:",
+      draw,
+      "coordinates:",
+      JSON.stringify(coordinates),
+    );
+
+    if (!draw) {
+      console.warn(
+        "[geofences] loadPolygonIntoDraw: drawRef is null – map may not be ready yet",
+      );
+      return;
+    }
+
+    draw.deleteAll();
+    draw.add({
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "Polygon",
+        coordinates,
+      },
+    });
+    console.log(
+      "[geofences] loadPolygonIntoDraw: feature added, draw.getAll():",
+      JSON.stringify(draw.getAll()),
+    );
+    setCanEditPolygon(true);
+  }, []);
+
+  const handleDrawSync = useCallback(() => {
+    console.log("[geofences] handleDrawSync fired");
+    const coordinates = getDrawnPolygonCoordinates();
+
+    if (!coordinates) {
+      console.warn(
+        "[geofences] handleDrawSync: no valid polygon found, clearing form",
+      );
+      setCanEditPolygon(false);
+      applyDrawCoordinatesToActiveForm("");
+      return;
+    }
+
+    console.log(
+      "[geofences] handleDrawSync: valid polygon found, coordinates:",
+      JSON.stringify(coordinates),
+    );
+    setCanEditPolygon(true);
+  }, [applyDrawCoordinatesToActiveForm, getDrawnPolygonCoordinates]);
+
+  const handleExtractCoordinates = useCallback(() => {
+    const coordinates = getDrawnPolygonCoordinates();
+
+    if (!coordinates) {
+      const errorText =
+        "Draw a polygon on the map first, then click Extract Coordinates.";
+      setTestAreaOutput("");
+      if (editingGeofence) {
+        setUpdateError(errorText);
+      } else {
+        setCreateError(errorText);
+      }
+      return;
+    }
+
+    const coordinatesJson = JSON.stringify(coordinates, null, 2);
+    const featureCollectionJson = JSON.stringify(
       {
         type: "FeatureCollection",
         features: [
@@ -514,100 +710,22 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
       null,
       2,
     );
-  }, []);
 
-  const normalizeRingCoordinates = useCallback(
-    (rawRing: unknown): number[][] | null => {
-      if (!Array.isArray(rawRing)) {
-        return null;
-      }
-
-      const normalizedRing = rawRing
-        .map((point) => {
-          if (!Array.isArray(point) || point.length < 2) {
-            return null;
-          }
-
-          const lng = Number(point[0]);
-          const lat = Number(point[1]);
-
-          if (Number.isNaN(lng) || Number.isNaN(lat)) {
-            return null;
-          }
-
-          return [lng, lat];
-        })
-        .filter((point): point is number[] => Array.isArray(point));
-
-      if (normalizedRing.length < 3) {
-        return null;
-      }
-
-      return ensureClosedLinearRing(normalizedRing);
-    },
-    [],
-  );
-
-  const getDrawnPolygonCoordinates = useCallback((): number[][][] | null => {
-    const draw = drawRef.current;
-
-    if (!draw) {
-      return null;
-    }
-
-    const allFeatures = draw.getAll();
-    const polygonFeature = allFeatures.features
-      ?.filter((feature) => feature.geometry?.type === "Polygon")
-      .at(-1);
-
-    if (polygonFeature?.geometry?.coordinates) {
-      const polygonCoordinates = polygonFeature.geometry.coordinates;
-
-      if (Array.isArray(polygonCoordinates) && polygonCoordinates.length > 0) {
-        const ring = normalizeRingCoordinates(polygonCoordinates[0]);
-        if (ring) {
-          return [ring];
-        }
-      }
-    }
-
-    const lineFeature = allFeatures.features
-      ?.filter((feature) => feature.geometry?.type === "LineString")
-      .at(-1);
-
-    if (!lineFeature?.geometry?.coordinates) {
-      return null;
-    }
-
-    const ringFromLine = normalizeRingCoordinates(
-      lineFeature.geometry.coordinates,
+    setTestAreaOutput((prev) =>
+      prev === featureCollectionJson ? prev : featureCollectionJson,
     );
+    applyDrawCoordinatesToActiveForm(coordinatesJson);
 
-    if (!ringFromLine || ringFromLine.length < 4) {
-      return null;
+    if (editingGeofence) {
+      setUpdateError("");
+    } else {
+      setCreateError("");
     }
-
-    return [ringFromLine];
-  }, [normalizeRingCoordinates]);
-
-  const loadPolygonIntoDraw = useCallback((coordinates: number[][][]) => {
-    const draw = drawRef.current;
-
-    if (!draw) {
-      return;
-    }
-
-    draw.deleteAll();
-    draw.add({
-      type: "Feature",
-      properties: {},
-      geometry: {
-        type: "Polygon",
-        coordinates,
-      },
-    });
-    setCanEditPolygon(true);
-  }, []);
+  }, [
+    applyDrawCoordinatesToActiveForm,
+    editingGeofence,
+    getDrawnPolygonCoordinates,
+  ]);
 
   const handleEditPolygon = useCallback(() => {
     const draw = drawRef.current;
@@ -641,27 +759,58 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
       } else {
         setCreateError(errorText);
       }
-    } else {
-      try {
-        draw.changeMode("direct_select", {
-          featureId: polygonFeature.id,
-        });
-      } catch {
-        draw.changeMode("simple_select");
-        const errorText =
-          "Unable to enter direct edit mode for this shape. Draw or reload the polygon and try again.";
-        if (editingGeofence) {
-          setUpdateError(errorText);
-        } else {
-          setCreateError(errorText);
-        }
-      }
+      return;
     }
 
-    if (editingGeofence) {
-      setUpdateError("");
-    } else {
-      setCreateError("");
+    try {
+      draw.changeMode("direct_select", {
+        featureId: polygonFeature.id,
+      });
+      if (editingGeofence) {
+        setUpdateError("");
+      } else {
+        setCreateError("");
+      }
+    } catch {
+      draw.changeMode("simple_select");
+      const errorText =
+        "Unable to enter direct edit mode for this shape. Draw or reload the polygon and try again.";
+      if (editingGeofence) {
+        setUpdateError(errorText);
+      } else {
+        setCreateError(errorText);
+      }
+    }
+  }, [editingGeofence]);
+
+  const handleStartPolygonDraw = useCallback(() => {
+    const draw = drawRef.current;
+
+    if (!draw) {
+      console.warn("[geofences] handleStartPolygonDraw: drawRef is null");
+      return;
+    }
+
+    try {
+      draw.changeMode("draw_polygon");
+      if (editingGeofence) {
+        setUpdateError("");
+      } else {
+        setCreateError("");
+      }
+      console.log("[geofences] switched to draw_polygon mode");
+    } catch (error) {
+      console.error(
+        "[geofences] failed to switch to draw_polygon mode:",
+        error,
+      );
+      const errorText =
+        "Unable to enter polygon draw mode. Refresh the page and try again.";
+      if (editingGeofence) {
+        setUpdateError(errorText);
+      } else {
+        setCreateError(errorText);
+      }
     }
   }, [editingGeofence]);
 
@@ -689,13 +838,12 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
       const polygonButton = toolbar.querySelector<HTMLButtonElement>(
         ".mapbox-gl-draw_polygon",
       );
-      const lineButton = toolbar.querySelector<HTMLButtonElement>(
-        ".mapbox-gl-draw_line",
-      );
-      const insertAfter = polygonButton ?? lineButton;
 
-      if (insertAfter?.parentElement === toolbar && insertAfter.nextSibling) {
-        toolbar.insertBefore(editButton, insertAfter.nextSibling);
+      if (
+        polygonButton?.parentElement === toolbar &&
+        polygonButton.nextSibling
+      ) {
+        toolbar.insertBefore(editButton, polygonButton.nextSibling);
       } else {
         toolbar.appendChild(editButton);
       }
@@ -704,217 +852,12 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
     editButton.onclick = () => {
       handleEditPolygon();
     };
+
     editButton.disabled = !canEditPolygon;
-
-    editToolbarButtonRef.current = editButton;
   }, [canEditPolygon, handleEditPolygon]);
-
-  const handleExtractCoordinates = useCallback(() => {
-    const coordinates = getDrawnPolygonCoordinates();
-
-    if (!coordinates) {
-      const errorText =
-        "Draw a polygon on the map first, then click Extract Coordinates.";
-      setTestAreaOutput("");
-      if (editingGeofence) {
-        setUpdateError(errorText);
-      } else {
-        setCreateError(errorText);
-      }
-      return;
-    }
-
-    const formatted = JSON.stringify(coordinates, null, 2);
-    setTestAreaOutput(toFeatureCollectionJson(coordinates));
-    applyDrawCoordinatesToActiveForm(formatted);
-
-    if (editingGeofence) {
-      setUpdateError("");
-    } else {
-      setCreateError("");
-    }
-  }, [
-    applyDrawCoordinatesToActiveForm,
-    editingGeofence,
-    getDrawnPolygonCoordinates,
-    toFeatureCollectionJson,
-  ]);
-
-  const handleDrawSync = useCallback(() => {
-    const coordinates = getDrawnPolygonCoordinates();
-
-    if (!coordinates) {
-      setTestAreaOutput("");
-      setCanEditPolygon(false);
-      applyDrawCoordinatesToActiveForm("");
-      return;
-    }
-
-    setTestAreaOutput(toFeatureCollectionJson(coordinates));
-    setCanEditPolygon(true);
-    applyDrawCoordinatesToActiveForm(JSON.stringify(coordinates, null, 2));
-  }, [
-    applyDrawCoordinatesToActiveForm,
-    getDrawnPolygonCoordinates,
-    toFeatureCollectionJson,
-  ]);
-
-  const handleDrawCreate = useCallback(
-    (event?: DrawEvent) => {
-      handleDrawSync();
-
-      const draw = drawRef.current;
-      if (!draw) {
-        return;
-      }
-
-      const createdFeature = event?.features?.[0];
-
-      if (createdFeature?.geometry?.type === "Polygon") {
-        const createdId =
-          createdFeature.id ??
-          draw
-            .getAll()
-            .features
-            ?.filter((feature) => feature.geometry?.type === "Polygon")
-            .at(-1)
-            ?.id;
-
-        if (isValidFeatureId(createdId)) {
-          try {
-            draw.changeMode("direct_select", { featureId: createdId });
-          } catch {
-            draw.changeMode("simple_select");
-          }
-        }
-        return;
-      }
-
-      if (createdFeature?.geometry?.type === "LineString") {
-        if (isSwitchingToLineModeRef.current) {
-          return;
-        }
-
-        isSwitchingToLineModeRef.current = true;
-        setTimeout(() => {
-          try {
-            draw.changeMode("draw_line_string");
-          } finally {
-            isSwitchingToLineModeRef.current = false;
-          }
-        }, 0);
-      }
-    },
-    [handleDrawSync],
-  );
-
-  const refreshToolbarPlacement = useCallback(() => {
-    const toolbar = drawToolbarRef.current;
-
-    if (!toolbar) {
-      return;
-    }
-
-    if (!toolbarVisible) {
-      toolbar.style.display = "none";
-      return;
-    }
-
-    if (toolbarNumColumns === "Infinity") {
-      toolbar.style.display = "flex";
-      toolbar.style.gridTemplateColumns = "";
-      toolbar.style.flexWrap = "nowrap";
-    } else {
-      toolbar.style.display = "grid";
-      toolbar.style.gridTemplateColumns = `repeat(${toolbarNumColumns}, minmax(0, 1fr))`;
-      toolbar.style.flexWrap = "";
-    }
-
-    toolbar.classList.toggle("sats-draw-toolbar-dark", toolbarStyle === "dark");
-
-    const mapContainer = mapContainerRef.current;
-    if (!mapContainer) {
-      return;
-    }
-
-    let target: HTMLDivElement | null = null;
-
-    if (showToolbarInTestArea) {
-      target = testToolbarContainerRef.current;
-    } else if (toolbarPosition === "non-fixed") {
-      target = inlineToolbarContainerRef.current;
-    } else {
-      target = mapContainer.querySelector<HTMLDivElement>(
-        `.maplibregl-ctrl-${toolbarPosition}`,
-      );
-    }
-
-    if (target && toolbar.parentElement !== target) {
-      target.appendChild(toolbar);
-    }
-
-    ensureEditToolbarButtonRef.current();
-  }, [
-    showToolbarInTestArea,
-    toolbarNumColumns,
-    toolbarPosition,
-    toolbarStyle,
-    toolbarVisible,
-  ]);
-
-  const recreateDrawToolbar = useCallback(() => {
-    const map = mapRef.current;
-    const DrawCtor = DrawConstructorRef.current;
-
-    if (!map || !DrawCtor || !isMapLoadedRef.current) {
-      return;
-    }
-
-    const previous = drawRef.current;
-    const previousFeatures = previous?.getAll();
-
-    if (previous) {
-      map.removeControl(previous);
-    }
-
-    const nextDraw = new DrawCtor({
-      displayControlsDefault: false,
-      controls: toDrawControls(toolbarButtons),
-      styles: mapboxDrawStyles,
-    });
-
-    map.addControl(nextDraw, "top-left");
-
-    if (previousFeatures?.features?.length) {
-      nextDraw.set(previousFeatures);
-    }
-
-    drawRef.current = nextDraw;
-    drawToolbarRef.current =
-      mapContainerRef.current?.querySelector<HTMLDivElement>(
-        ".mapboxgl-ctrl-group.mapboxgl-ctrl",
-      ) ?? null;
-
-    ensureEditToolbarButtonRef.current();
-    refreshToolbarPlacementRef.current();
-  }, [toolbarButtons]);
-
-  // Assign all callbacks to their refs every render so the stable map event
-  // listeners always call the current version without needing to be re-registered.
-  handleDrawCreateRef.current = handleDrawCreate;
-  handleDrawSyncRef.current = handleDrawSync;
-  recreateDrawToolbarRef.current = recreateDrawToolbar;
-  ensureEditToolbarButtonRef.current = ensureEditToolbarButton;
-  refreshToolbarPlacementRef.current = refreshToolbarPlacement;
 
   useEffect(() => {
     let active = true;
-
-    // Stable wrappers — these function identities never change so the map
-    // doesn't need to be torn down and re-created when callbacks update.
-    const onDrawCreate = (event?: DrawEvent) =>
-      handleDrawCreateRef.current(event);
-    const onDrawSync = () => handleDrawSyncRef.current();
 
     const initMap = async () => {
       if (!mapContainerRef.current || mapRef.current) {
@@ -926,23 +869,19 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
       const MapboxDraw = MapboxDrawModule.default;
       DrawConstructorRef.current = MapboxDraw as unknown as DrawConstructor;
 
-      // Mapbox Draw defaults to mapboxgl CSS/control class names.
-      // Override to maplibregl classes so controls and interactions behave correctly.
-      (
-        MapboxDraw as unknown as {
-          constants?: {
-            classes?: {
-              CANVAS?: string;
-              CONTROL_BASE?: string;
-              CONTROL_PREFIX?: string;
-              CONTROL_GROUP?: string;
-              ATTRIBUTION?: string;
-            };
-          };
-        }
-      ).constants = {
-        ...((MapboxDraw as unknown as { constants?: object }).constants ?? {}),
+      const drawWithConstants = MapboxDraw as unknown as {
+        constants?: {
+          classes?: Record<string, string>;
+        };
+      };
+
+      const existingConstants = drawWithConstants.constants ?? {};
+      const existingClasses = existingConstants.classes ?? {};
+
+      drawWithConstants.constants = {
+        ...existingConstants,
         classes: {
+          ...existingClasses,
           CANVAS: "maplibregl-canvas",
           CONTROL_BASE: "maplibregl-ctrl",
           CONTROL_PREFIX: "maplibregl-ctrl-",
@@ -951,7 +890,7 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
         },
       };
 
-      if (!active || !mapContainerRef.current) {
+      if (!active || !mapContainerRef.current || !DrawConstructorRef.current) {
         return;
       }
 
@@ -968,52 +907,162 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
         maxZoom: 20,
       });
 
+      const draw = new DrawConstructorRef.current({
+        displayControlsDefault: false,
+        controls: drawControls,
+        styles: mapboxDrawStyles,
+      });
+
+      const onDrawCreate = () => {
+        console.log("[geofences] draw.create event fired");
+        handleDrawSync();
+      };
+
+      const onDrawUpdate = () => {
+        console.log("[geofences] draw.update event fired");
+        if (drawSyncDebounceTimeoutRef.current) {
+          clearTimeout(drawSyncDebounceTimeoutRef.current);
+        }
+
+        drawSyncDebounceTimeoutRef.current = setTimeout(() => {
+          handleDrawSync();
+        }, 200);
+      };
+
+      const onDrawDelete = () => {
+        if (drawSyncDebounceTimeoutRef.current) {
+          clearTimeout(drawSyncDebounceTimeoutRef.current);
+          drawSyncDebounceTimeoutRef.current = null;
+        }
+
+        handleDrawSync();
+      };
+
+      console.log("[geofences] map instance created, waiting for load event");
+
+      let controlsAdded = false;
       map.on("load", () => {
-        isMapLoadedRef.current = true;
+        console.log(
+          "[geofences] map load event fired, active:",
+          active,
+          "controlsAdded:",
+          controlsAdded,
+        );
+        if (!active || controlsAdded) return;
+        controlsAdded = true;
         map.doubleClickZoom?.disable();
         map.addControl(new maplibregl.NavigationControl(), "top-right");
-        recreateDrawToolbarRef.current();
+
+        // Temporarily make addLayer idempotent to suppress the "layer already
+        // exists" error that MapboxDraw triggers when its internal styledata
+        // listener fires a second setup() call synchronously during onAdd.
+        const originalAddLayer = map.addLayer.bind(map) as typeof map.addLayer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (map as any).addLayer = (layer: any, ...args: any[]) => {
+          if (map.getLayer(layer.id)) return map;
+          return originalAddLayer(layer, ...args);
+        };
+        try {
+          map.addControl(draw as never, "top-left");
+          console.log("[geofences] draw control added successfully");
+        } catch (drawAddErr) {
+          console.error("[geofences] failed to add draw control:", drawAddErr);
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (map as any).addLayer = originalAddLayer;
+
+        drawToolbarRef.current =
+          mapContainerRef.current?.querySelector<HTMLDivElement>(
+            ".maplibregl-ctrl-group.maplibregl-ctrl, .mapboxgl-ctrl-group.mapboxgl-ctrl",
+          ) ?? null;
+
+        console.log("[geofences] drawToolbarRef set:", drawToolbarRef.current);
+        console.log("[geofences] drawRef set:", drawRef.current);
+
+        ensureEditToolbarButton();
+        // --- interaction diagnostics ---
+        map.on("draw.modechange", (e) => {
+          console.log("[geofences] draw.modechange:", e);
+        });
+        map.on("draw.render", () => {
+          console.log("[geofences] draw.render fired");
+        });
+        map.on("draw.selectionchange", (e) => {
+          console.log("[geofences] draw.selectionchange:", e);
+        });
+        map.on("click", (e) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const drawInstance = drawRef.current as any;
+          const mode = drawInstance?.getMode?.() ?? "unknown";
+          console.log(
+            "[geofences] map click at",
+            e?.lngLat,
+            "draw mode:",
+            mode,
+          );
+        });
+
+        // Log available methods on the draw instance to verify full init
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const drawAny = draw as any;
+        console.log("[geofences] draw.getMode():", drawAny.getMode?.());
+        console.log(
+          "[geofences] draw available methods:",
+          Object.keys(drawAny).join(", "),
+        );
       });
 
       map.on("draw.create", onDrawCreate);
-      map.on("draw.update", onDrawSync);
-      map.on("draw.delete", onDrawSync);
+      map.on("draw.update", onDrawUpdate);
+      map.on("draw.delete", onDrawDelete);
+
+      console.log(
+        "[geofences] registered draw.create / draw.update / draw.delete listeners",
+      );
 
       mapRef.current = map as unknown as MapInstance;
+      drawRef.current = draw;
+      console.log("[geofences] mapRef and drawRef assigned");
+
+      return () => {
+        map.off("draw.create", onDrawCreate);
+        map.off("draw.update", onDrawUpdate);
+        map.off("draw.delete", onDrawDelete);
+      };
     };
 
-    void initMap();
+    let mapCleanup: (() => void) | undefined;
+
+    void initMap().then((cleanup) => {
+      mapCleanup = cleanup;
+    });
 
     return () => {
       active = false;
 
+      if (mapCleanup) {
+        mapCleanup();
+      }
+
+      if (drawSyncDebounceTimeoutRef.current) {
+        clearTimeout(drawSyncDebounceTimeoutRef.current);
+        drawSyncDebounceTimeoutRef.current = null;
+      }
+
       if (mapRef.current) {
-        mapRef.current.off("draw.create", onDrawCreate);
-        mapRef.current.off("draw.update", onDrawSync);
-        mapRef.current.off("draw.delete", onDrawSync);
         mapRef.current.remove();
         mapRef.current = null;
-        drawRef.current = null;
-        drawToolbarRef.current = null;
-        editToolbarButtonRef.current = null;
-        DrawConstructorRef.current = null;
-        isMapLoadedRef.current = false;
       }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  useEffect(() => {
-    recreateDrawToolbar();
-  }, [recreateDrawToolbar]);
+      drawRef.current = null;
+      DrawConstructorRef.current = null;
+      drawToolbarRef.current = null;
+    };
+  }, [ensureEditToolbarButton, handleDrawSync]);
 
   useEffect(() => {
     ensureEditToolbarButton();
   }, [ensureEditToolbarButton]);
-
-  useEffect(() => {
-    refreshToolbarPlacement();
-  }, [refreshToolbarPlacement]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1032,6 +1081,7 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
           id: org.id,
           name: org.organization_name,
         }));
+
         setOrganizations(options);
 
         if (options[0]) {
@@ -1087,6 +1137,21 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
     };
   }, [loadGeofences, selectedOrgId]);
 
+  useEffect(() => {
+    if (!selectedOrganization) {
+      return;
+    }
+
+    setCreateValues((prev) =>
+      prev.park_name === selectedOrganization.name
+        ? prev
+        : {
+            ...prev,
+            park_name: selectedOrganization.name,
+          },
+    );
+  }, [selectedOrganization]);
+
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -1099,15 +1164,29 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
     setCreateSuccess("");
     setIsCreating(true);
 
+    if (!currentUserId) {
+      setCreateError(
+        "Current user ID is missing or invalid. Please sign in again.",
+      );
+      setIsCreating(false);
+      return;
+    }
+
     try {
       await geofencesService.createGeofence(
         selectedOrgId,
-        toPayload(createValues),
+        toPayload(createValues, currentUserId),
       );
+
       const refreshed = await loadGeofences(selectedOrgId);
       setRows(refreshed);
-      setCreateValues({ ...defaultValues, created_by: user.id });
+      setCreateValues({
+        ...defaultValues,
+        created_by: currentUserId,
+      });
       drawRef.current?.deleteAll();
+      setTestAreaOutput("");
+      setCanEditPolygon(false);
       setCreateSuccess("Geofence created successfully.");
       setShowCreateForm(false);
     } catch (requestError) {
@@ -1126,7 +1205,7 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
     setShowCreateForm(false);
     setEditingGeofence(geofence);
 
-    const values = fromGeofence(geofence, user.id);
+    const values = fromGeofence(geofence, currentUserId);
     setUpdateValues(values);
     loadPolygonIntoDraw(geofence.boundary.coordinates);
   };
@@ -1142,16 +1221,27 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
     setUpdateSuccess("");
     setIsUpdating(true);
 
+    if (!currentUserId) {
+      setUpdateError(
+        "Current user ID is missing or invalid. Please sign in again.",
+      );
+      setIsUpdating(false);
+      return;
+    }
+
     try {
       await geofencesService.updateGeofence(
         selectedOrgId,
         editingGeofence.id,
-        toPayload(updateValues),
+        toPayload(updateValues, currentUserId),
       );
+
       const refreshed = await loadGeofences(selectedOrgId);
       setRows(refreshed);
       setEditingGeofence(null);
       drawRef.current?.deleteAll();
+      setTestAreaOutput("");
+      setCanEditPolygon(false);
       setUpdateSuccess("Geofence updated successfully.");
     } catch (requestError) {
       setUpdateError(
@@ -1185,9 +1275,11 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
       await geofencesService.deleteGeofence(selectedOrgId, geofence.id);
       const refreshed = await loadGeofences(selectedOrgId);
       setRows(refreshed);
+
       if (editingGeofence?.id === geofence.id) {
         setEditingGeofence(null);
       }
+
       setDeleteSuccess("Geofence deleted successfully.");
     } catch (requestError) {
       setDeleteError(
@@ -1217,7 +1309,11 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
             onClick={() => {
               clearActionMessages();
               setEditingGeofence(null);
-              setCreateValues({ ...defaultValues, created_by: user.id });
+              setCreateValues({
+                ...defaultValues,
+                created_by: currentUserId,
+                park_name: selectedOrganization?.name ?? "",
+              });
               setTestAreaOutput("");
               setCanEditPolygon(false);
               drawRef.current?.deleteAll();
@@ -1267,139 +1363,47 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
           <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-mist)]">
             Geofence Map Drawing
           </h3>
-          <button
-            type="button"
-            onClick={handleExtractCoordinates}
-            className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-cyan-100"
-          >
-            Extract Coordinates
-          </button>
-        </div>
-        <div className="mb-4 grid gap-4 rounded-xl border border-white/10 bg-black/20 p-3 md:grid-cols-2">
-          <div className="space-y-3">
-            <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-fog)]">
-              Buttons
-              <select
-                value={toolbarButtons}
-                onChange={(event) => {
-                  const selected = Array.from(
-                    event.target.selectedOptions,
-                    (option) => option.value as ToolbarButtonOption,
-                  );
-                  setToolbarButtons(selected);
-                }}
-                multiple
-                className="mt-2 h-28 w-full rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-xs"
-              >
-                <option value="draw-point">draw-point</option>
-                <option value="draw-line">draw-line</option>
-                <option value="draw-polygon">draw-polygon</option>
-                <option value="trash">trash</option>
-                <option value="combine-features">combine-features</option>
-                <option value="uncombine-features">uncombine-features</option>
-              </select>
-            </label>
-
-            <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-fog)]">
-              Num columns
-              <select
-                value={String(toolbarNumColumns)}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  setToolbarNumColumns(
-                    next === "Infinity"
-                      ? "Infinity"
-                      : (Number(next) as ToolbarNumColumns),
-                  );
-                }}
-                className="mt-2 w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-xs"
-              >
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-                <option value="Infinity">Infinity</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="space-y-3">
-            <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-fog)]">
-              Position
-              <select
-                value={toolbarPosition}
-                onChange={(event) =>
-                  setToolbarPosition(event.target.value as DrawControlPosition)
-                }
-                className="mt-2 w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-xs"
-              >
-                <option value="bottom-left">bottom-left</option>
-                <option value="bottom-right">bottom-right</option>
-                <option value="non-fixed">non-fixed</option>
-                <option value="top-left">top-left</option>
-                <option value="top-right">top-right</option>
-              </select>
-            </label>
-
-            <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-fog)]">
-              Style
-              <select
-                value={toolbarStyle}
-                onChange={(event) =>
-                  setToolbarStyle(event.target.value as ToolbarStyle)
-                }
-                className="mt-2 w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-xs"
-              >
-                <option value="dark">dark</option>
-                <option value="light">light</option>
-              </select>
-            </label>
-
-            <label className="flex items-center gap-2 text-xs text-[var(--color-fog)]">
-              <input
-                type="checkbox"
-                checked={toolbarVisible}
-                onChange={(event) => setToolbarVisible(event.target.checked)}
-              />
-              Visible
-            </label>
-
-            <label className="flex items-center gap-2 text-xs text-[var(--color-fog)]">
-              <input
-                type="checkbox"
-                checked={showToolbarInTestArea}
-                onChange={(event) =>
-                  setShowToolbarInTestArea(event.target.checked)
-                }
-              />
-              Container ID (show in test area)
-            </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleStartPolygonDraw}
+              className="rounded-full border border-emerald-300/40 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-emerald-100"
+            >
+              Draw Polygon
+            </button>
+            <button
+              type="button"
+              onClick={handleEditPolygon}
+              disabled={!canEditPolygon}
+              className="rounded-full border border-amber-300/40 bg-amber-400/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Edit Polygon
+            </button>
+            <button
+              type="button"
+              onClick={handleExtractCoordinates}
+              className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-cyan-100"
+            >
+              Extract Coordinates
+            </button>
           </div>
         </div>
 
-        <div
-          ref={inlineToolbarContainerRef}
-          className="mb-3 min-h-9 rounded-lg border border-dashed border-white/15 bg-black/10 p-2"
-        />
         <div
           ref={mapContainerRef}
           className="geofence-map-container h-[22rem] w-full overflow-hidden rounded-xl border border-white/15"
         />
+
         <p className="mt-2 text-xs text-[var(--color-fog)]">
-          Use the polygon tool on the map to draw a boundary, then click Extract
-          Coordinates.
+          Draw a polygon on the map, optionally edit vertices, then extract the
+          boundary JSON into the active form.
         </p>
 
         <fieldset className="mt-4 rounded-xl border border-white/10 p-3">
           <legend className="px-2 text-xs uppercase tracking-[0.12em] text-[var(--color-fog)]">
-            Test area
+            Extracted output
           </legend>
-          <div
-            ref={testToolbarContainerRef}
-            className="min-h-9 rounded-lg border border-dashed border-white/15 bg-black/10 p-2"
-          />
-          <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-fog)]">
+          <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-fog)]">
             Drawn shapes output
             <textarea
               readOnly
@@ -1440,12 +1444,7 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
             <input
               required
               value={createValues.park_name}
-              onChange={(event) =>
-                setCreateValues((prev) => ({
-                  ...prev,
-                  park_name: event.target.value,
-                }))
-              }
+              readOnly
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             />
           </label>
@@ -1477,12 +1476,7 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
             <input
               required
               value={createValues.created_by}
-              onChange={(event) =>
-                setCreateValues((prev) => ({
-                  ...prev,
-                  created_by: event.target.value,
-                }))
-              }
+              readOnly
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             />
           </label>
@@ -1590,12 +1584,7 @@ export default function TrackingGeofencesPageView(): React.JSX.Element {
             <input
               required
               value={updateValues.created_by}
-              onChange={(event) =>
-                setUpdateValues((prev) => ({
-                  ...prev,
-                  created_by: event.target.value,
-                }))
-              }
+              readOnly
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             />
           </label>

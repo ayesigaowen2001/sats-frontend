@@ -100,7 +100,7 @@ async function getApiErrorMessage(
 }
 
 export class DevicesService {
-  private createHeaders(includeJson = true) {
+  private createHeaders(includeJson = true, organizationId?: string) {
     const headers = new Headers({
       Accept: "application/json",
     });
@@ -112,6 +112,10 @@ export class DevicesService {
     const accessToken = getAccessToken();
     if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    if (organizationId) {
+      headers.set("organization_id", organizationId);
     }
 
     return headers;
@@ -237,6 +241,29 @@ export class DevicesService {
         ),
       );
     }
+  }
+
+  async listDevicesByOrganization(orgId: string): Promise<DeviceRecord[]> {
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/devices`,
+      {
+        method: "GET",
+        headers: this.createHeaders(false, orgId),
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        await getApiErrorMessage(
+          response,
+          `Failed to load organization devices: ${response.status}`,
+        ),
+      );
+    }
+
+    const payload = (await response.json()) as unknown;
+    return extractList<DeviceApiModel>(payload).map(mapDevice);
   }
 }
 

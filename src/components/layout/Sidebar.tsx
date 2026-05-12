@@ -3,11 +3,13 @@
 import { Menu } from "primereact/menu";
 import type { MenuItem } from "primereact/menuitem";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import {
   getDashboardModule,
   getDefaultSidebarItem,
 } from "@/lib/dashboard-config";
+import { getSessionData } from "@/lib/auth-tokens";
 import { cn } from "@/lib/utils";
 
 export function Sidebar() {
@@ -15,10 +17,36 @@ export function Sidebar() {
   const router = useRouter();
   const currentModule = getDashboardModule(pathname);
   const defaultSidebarItem = getDefaultSidebarItem(pathname);
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
+
+  // Read session data only after hydration to avoid mismatch
+  useEffect(() => {
+    setIsSystemAdmin(Boolean(getSessionData()?.user.is_system_admin));
+    setHasHydrated(true);
+  }, []);
+
+  if (!hasHydrated) {
+    // Return empty sidebar placeholder during hydration
+    return (
+      <aside className="hidden w-[320px] flex-none border-r border-[var(--color-shell-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] lg:flex lg:h-screen lg:sticky lg:top-0">
+        <div className="h-full w-full px-6 py-6">
+          <h1 className="text-lg font-semibold text-[var(--color-ice)]">
+            {currentModule.label}
+          </h1>
+        </div>
+      </aside>
+    );
+  }
 
   const moduleItems: MenuItem[] = currentModule.items
     .filter((item) => item.label.trim().toLowerCase() !== "dashboard")
     .map((item) => {
+      const displayLabel =
+        !isSystemAdmin && item.href === "/organization/all-organizations"
+          ? "My organisation"
+          : item.label;
+
       const isActive =
         pathname === item.href ||
         (pathname === currentModule.href &&
@@ -26,7 +54,7 @@ export function Sidebar() {
 
       return {
         key: item.href,
-        label: item.label,
+        label: displayLabel,
         command: () => router.push(item.href),
         template: (_, options) => (
           <button
@@ -50,7 +78,7 @@ export function Sidebar() {
               aria-hidden="true"
             />
             <span className="block text-sm font-semibold text-[var(--color-ice)]">
-              {item.label}
+              {displayLabel}
             </span>
           </button>
         ),

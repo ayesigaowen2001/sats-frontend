@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import TrackingGeofencesPageView from "@/components/tracking-geofences-page-view";
+import { TrackingGeofencesPageView } from "../../../../components/tracking-geofences-page-view";
 import { ModuleSectionPage } from "@/components/module-section-page";
 import { hasModuleSection } from "@/lib/dashboard-config";
 

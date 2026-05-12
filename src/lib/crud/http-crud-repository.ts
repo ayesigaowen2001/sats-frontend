@@ -1,4 +1,5 @@
 import type { CrudRepository } from "@/lib/crud/contracts";
+import { getSessionData } from "@/lib/auth-tokens";
 
 interface CrudListPayload<TApiModel> {
   items: TApiModel[];
@@ -72,6 +73,7 @@ export abstract class HttpCrudRepository<
 
   private async request(path: string, init: RequestInit): Promise<Response> {
     const accessToken = this.getAccessToken();
+    const organizationId = getSessionData()?.user.organization_id;
     const headers = new Headers({
       Accept: "application/json",
       ...this.normalizeHeaders(init.headers),
@@ -83,6 +85,10 @@ export abstract class HttpCrudRepository<
 
     if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    if (organizationId) {
+      headers.set("organization_id", organizationId);
     }
 
     const response = await fetch(`${this.getBaseUrl()}${path}`, {

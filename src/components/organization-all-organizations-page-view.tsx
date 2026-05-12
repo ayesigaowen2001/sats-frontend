@@ -10,6 +10,7 @@ import { ResourceRowActions } from "@/components/common/resource-row-actions";
 import { ServerIdFilter } from "@/components/common/server-id-filter";
 import { DataTable } from "@/components/data-table";
 import { ResourceFeedback } from "@/components/resource-feedback";
+import { getSessionData } from "@/lib/auth-tokens";
 import {
   defaultOrganizationInput,
   organizationCrudService,
@@ -54,6 +55,7 @@ function toDateInputValue(value: string) {
 }
 
 export function OrganizationAllOrganizationsPageView() {
+  const isSystemAdmin = Boolean(getSessionData()?.user.is_system_admin);
   const [rows, setRows] = useState<Organization[] | null>(null);
   const [error, setError] = useState("");
 
@@ -281,34 +283,38 @@ export function OrganizationAllOrganizationsPageView() {
       <section className="space-y-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <h2 className="text-xl font-semibold text-[var(--color-ice)]">
-            All organizations
+            {isSystemAdmin ? "All organizations" : "My organisation"}
           </h2>
-          <div className="w-full xl:max-w-xl xl:flex-1">
-            <ServerIdFilter
-              label="Organization lookup"
-              placeholder="Enter organization ID"
-              actionLabel="Find organization"
-              loadingLabel="Searching..."
-              errorMessage={filterError}
-              hasActiveResult={filteredOrganization !== null}
-              onSearch={handleFilterOrganizationById}
-              onClear={handleClearOrganizationFilter}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setShowCreateForm((current) => !current);
-              setEditingOrganization(null);
-              clearActionMessages();
-            }}
-            className="rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/28"
-          >
-            {showCreateForm ? "Close form" : "Create organization"}
-          </button>
+          {isSystemAdmin ? (
+            <>
+              <div className="w-full xl:max-w-xl xl:flex-1">
+                <ServerIdFilter
+                  label="Organization lookup"
+                  placeholder="Enter organization ID"
+                  actionLabel="Find organization"
+                  loadingLabel="Searching..."
+                  errorMessage={filterError}
+                  hasActiveResult={filteredOrganization !== null}
+                  onSearch={handleFilterOrganizationById}
+                  onClear={handleClearOrganizationFilter}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateForm((current) => !current);
+                  setEditingOrganization(null);
+                  clearActionMessages();
+                }}
+                className="rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/28"
+              >
+                {showCreateForm ? "Close form" : "Create organization"}
+              </button>
+            </>
+          ) : null}
         </div>
 
-        {showCreateForm ? (
+        {isSystemAdmin && showCreateForm ? (
           <EntityForm
             title="Create organization"
             fields={organizationFormFields}
@@ -372,7 +378,11 @@ export function OrganizationAllOrganizationsPageView() {
           showCard={false}
           horizontalScroll
           minColumnWidthRem={11}
-          rows={filteredOrganization ? [filteredOrganization] : rows}
+          rows={
+            isSystemAdmin && filteredOrganization
+              ? [filteredOrganization]
+              : rows
+          }
           columns={[
             {
               header: "Organization",

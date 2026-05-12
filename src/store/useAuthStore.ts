@@ -53,7 +53,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         name: response.user.name,
         email: response.user.email,
         role: resolveRole(response.user.is_system_admin),
-        organizationId: "platform-authority",
+        organizationId:
+          response.user.organization_id ??
+          (response.user.is_system_admin ? "platform-authority" : ""),
       },
     });
   },
