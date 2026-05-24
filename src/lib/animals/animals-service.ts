@@ -48,6 +48,13 @@ export interface AnimalInput {
   location_tagged?: [number | null, number | null] | null;
 }
 
+export interface AnimalListFilters {
+  classification_id?: number;
+  gender?: string;
+  page?: number;
+  per_page?: number;
+}
+
 function mapAnimal(item: AnimalApiModel): Animal {
   return {
     id: String(item.animal_id ?? item.id ?? ""),
@@ -131,9 +138,31 @@ export class AnimalsService {
     return headers;
   }
 
-  async listAnimals(orgId: string): Promise<Animal[]> {
+  async listAnimals(
+    orgId: string,
+    filters: AnimalListFilters = {},
+  ): Promise<Animal[]> {
+    const query = new URLSearchParams();
+
+    if (typeof filters.classification_id === "number") {
+      query.set("classification_id", String(filters.classification_id));
+    }
+
+    if (filters.gender?.trim()) {
+      query.set("gender", filters.gender.trim());
+    }
+
+    if (typeof filters.page === "number" && filters.page > 0) {
+      query.set("page", String(filters.page));
+    }
+
+    if (typeof filters.per_page === "number" && filters.per_page > 0) {
+      query.set("per_page", String(filters.per_page));
+    }
+
+    const queryString = query.toString();
     const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/animals`,
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/animals${queryString ? `?${queryString}` : ""}`,
       {
         method: "GET",
         headers: this.createHeaders(false),

@@ -38,6 +38,14 @@ export interface DeviceInput {
   last_seen: string;
 }
 
+export interface OrganizationDeviceListFilters {
+  category_id?: number;
+  status?: string;
+  is_assigned?: boolean;
+  page?: number;
+  per_page?: number;
+}
+
 function mapDevice(item: DeviceApiModel): DeviceRecord {
   return {
     id: String(item.id),
@@ -244,11 +252,41 @@ export class DevicesService {
   }
 
   async listDevicesByOrganization(orgId: string): Promise<DeviceRecord[]> {
+    return this.listDevicesByOrganizationWithFilters(orgId, {});
+  }
+
+  async listDevicesByOrganizationWithFilters(
+    orgId: string,
+    filters: OrganizationDeviceListFilters,
+  ): Promise<DeviceRecord[]> {
+    const query = new URLSearchParams();
+
+    if (typeof filters.category_id === "number") {
+      query.set("category_id", String(filters.category_id));
+    }
+
+    if (filters.status?.trim()) {
+      query.set("status", filters.status.trim());
+    }
+
+    if (typeof filters.is_assigned === "boolean") {
+      query.set("is_assigned", String(filters.is_assigned));
+    }
+
+    if (typeof filters.page === "number" && filters.page > 0) {
+      query.set("page", String(filters.page));
+    }
+
+    if (typeof filters.per_page === "number" && filters.per_page > 0) {
+      query.set("per_page", String(filters.per_page));
+    }
+
+    const queryString = query.toString();
     const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/devices`,
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/devices${queryString ? `?${queryString}` : ""}`,
       {
         method: "GET",
-        headers: this.createHeaders(false, orgId),
+        headers: this.createHeaders(false),
         cache: "no-store",
       },
     );
