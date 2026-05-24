@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AllDevicesPageView } from "@/components/all-devices-page-view";
+import { DeviceBatteryLogsPageView } from "@/components/device-battery-logs-page-view";
 import { DeviceCategoriesPageView } from "@/components/device-categories-page-view";
 import { DeviceSpecificationsPageView } from "@/components/device-specifications-page-view";
 import { SensorLibraryPageView } from "@/components/sensor-library-page-view";
@@ -32,6 +33,10 @@ export default async function DeviceSectionPage({
 
   if (section === "specifications") {
     return <DeviceSpecificationsPageView />;
+  }
+
+  if (section === "power-status") {
+    return <DeviceBatteryLogsPageView />;
   }
 
   return <ModuleSectionPage pathname={`/device/${section}`} />;

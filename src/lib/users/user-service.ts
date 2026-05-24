@@ -65,6 +65,16 @@ export interface CreateOrganizationUserInput {
   status: string;
 }
 
+export interface CreateLocalNodeInput {
+  name: string;
+  email: string;
+  phone: string;
+  password?: string;
+  status: string;
+  is_system_admin?: false;
+  is_node?: true;
+}
+
 export interface CreateSystemAdminInput {
   name: string;
   email: string;
@@ -105,7 +115,10 @@ function mapUser(item: UserApiModel): UserRecord {
 }
 
 export class UserService {
-  private buildHeaders(includeContentType = true): Headers {
+  private buildHeaders(
+    includeContentType = true,
+    includeOrganizationHeader = true,
+  ): Headers {
     const accessToken = getAccessToken();
     const organizationId = getUserOrganizationId();
     const headers = new Headers({
@@ -120,11 +133,43 @@ export class UserService {
       headers.set("Authorization", `Bearer ${accessToken}`);
     }
 
-    if (organizationId) {
+    if (includeOrganizationHeader && organizationId) {
       headers.set("organization_id", organizationId);
     }
 
     return headers;
+  }
+
+  private async getErrorMessage(
+    response: Response,
+    fallback: string,
+  ): Promise<string> {
+    const contentType = response.headers.get("content-type") ?? "";
+
+    if (!contentType.includes("application/json")) {
+      return fallback;
+    }
+
+    try {
+      const payload = (await response.json()) as {
+        detail?: unknown;
+        message?: unknown;
+        error?: unknown;
+      };
+
+      const detail =
+        typeof payload.detail === "string"
+          ? payload.detail
+          : typeof payload.message === "string"
+            ? payload.message
+            : typeof payload.error === "string"
+              ? payload.error
+              : "";
+
+      return detail ? `${fallback} - ${detail}` : fallback;
+    } catch {
+      return fallback;
+    }
   }
 
   async listUsers(
@@ -194,6 +239,41 @@ export class UserService {
 
     if (!response.ok) {
       throw new Error(`Failed to create user: ${response.status}`);
+    }
+  }
+
+  async createLocalNode(
+    orgId: string,
+    input: CreateLocalNodeInput,
+  ): Promise<void> {
+    const headers = this.buildHeaders(true, false);
+
+    const payload: CreateLocalNodeInput = {
+      ...input,
+      is_system_admin: false,
+      is_node: true,
+    };
+
+    if (!payload.password) {
+      delete payload.password;
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/users/organisations/${encodeURIComponent(orgId)}/node`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        await this.getErrorMessage(
+          response,
+          `Failed to create local node: ${response.status}`,
+        ),
+      );
     }
   }
 
