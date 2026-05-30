@@ -341,11 +341,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         description: "Open the live operational map view.",
       },
       {
-        label: "All Movements",
-        href: "/tracking/movements",
-        description: "Review movement records across assets.",
-      },
-      {
         label: "Geofences",
         href: "/tracking/geofences",
         description: "Create and manage geofenced areas.",
@@ -354,16 +349,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         label: "Geofence Events / Breaches",
         href: "/tracking/geofence-events",
         description: "Monitor entries, exits, and violations.",
-      },
-      {
-        label: "Movement History",
-        href: "/tracking/history",
-        description: "Replay historical movement paths.",
-      },
-      {
-        label: "Tracking Reports",
-        href: "/tracking/reports",
-        description: "Generate movement and route intelligence reports.",
       },
     ],
   },
@@ -439,41 +424,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         href: "/reports",
         description: "Reporting queues and export health.",
       },
-      {
-        label: "Generate New Report",
-        href: "/reports/generate",
-        description: "Start a new report generation workflow.",
-      },
-      {
-        label: "Animal Movement Reports",
-        href: "/reports/animal-movement",
-        description: "Produce movement-focused outputs.",
-      },
-      {
-        label: "Health Trend Reports",
-        href: "/reports/health-trends",
-        description: "Publish health analytics summaries.",
-      },
-      {
-        label: "Device Performance Reports",
-        href: "/reports/device-performance",
-        description: "Review uptime and power performance.",
-      },
-      {
-        label: "Geofence Violation Reports",
-        href: "/reports/geofence-violations",
-        description: "Export protected-area incident logs.",
-      },
-      {
-        label: "Custom Reports",
-        href: "/reports/custom",
-        description: "Create tailored reporting packages.",
-      },
-      {
-        label: "Report History",
-        href: "/reports/history",
-        description: "Browse generated report archives.",
-      },
     ],
   },
   {
@@ -496,31 +446,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         href: "/notifications",
         description: "Notification status and active escalation overview.",
       },
-      {
-        label: "All Notifications",
-        href: "/notifications/all",
-        description: "Browse every notification and alert.",
-      },
-      {
-        label: "Active Alerts",
-        href: "/notifications/active-alerts",
-        description: "Focus on unacknowledged critical items.",
-      },
-      {
-        label: "Notification History",
-        href: "/notifications/history",
-        description: "Review previous notifications and outcomes.",
-      },
-      {
-        label: "Chat",
-        href: "/notifications/chat",
-        description: "Reserved for team messaging and collaboration workflows.",
-      },
-      {
-        label: "Notification Settings",
-        href: "/notifications/settings",
-        description: "Control subscriptions, channels, and thresholds.",
-      },
     ],
   },
   {
@@ -542,36 +467,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         label: "Dashboard",
         href: "/system-management",
         description: "Platform settings and compliance posture.",
-      },
-      {
-        label: "General Settings",
-        href: "/system-management/general-settings",
-        description: "Manage shared platform defaults.",
-      },
-      {
-        label: "Authentication Settings",
-        href: "/system-management/auth-settings",
-        description: "Configure login methods and session policy.",
-      },
-      {
-        label: "2FA Configuration",
-        href: "/system-management/two-factor",
-        description: "Adjust multifactor requirements.",
-      },
-      {
-        label: "Backup & Sync Settings",
-        href: "/system-management/backup-sync",
-        description: "Review backup cadence and replication.",
-      },
-      {
-        label: "Data Retention Policy",
-        href: "/system-management/retention-policy",
-        description: "Manage archival and purge policies.",
-      },
-      {
-        label: "System Logs",
-        href: "/system-management/logs",
-        description: "Inspect infrastructure and application logs.",
       },
     ],
   },

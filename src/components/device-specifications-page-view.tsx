@@ -60,10 +60,9 @@ const commonBatteryTypes = ["Li-ion", "LiPo", "LiFePO4", "NiMH", "Alkaline"];
 function toFormValues(
   specification: DeviceSpecification,
 ): DeviceSpecificationFormValues {
-  const communicationTypes = specification.communication_type
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
+  const communicationTypes = parseCommunicationTypes(
+    specification.communication_type,
+  );
 
   return {
     category_id: String(specification.category_id),
@@ -75,7 +74,11 @@ function toFormValues(
   };
 }
 
-function parseCommunicationTypes(rawValue: string): string[] {
+function parseCommunicationTypes(rawValue: unknown): string[] {
+  if (typeof rawValue !== "string") {
+    return [];
+  }
+
   return rawValue
     .split(",")
     .map((item) => item.trim().toLowerCase())

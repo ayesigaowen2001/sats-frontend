@@ -344,11 +344,11 @@ export function OrganizationSubscriptionPlansPageView() {
   return (
     <main className="flex w-full flex-1 flex-col gap-6 px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-6 xl:px-7">
       <section className="space-y-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h2 className="text-xl font-semibold text-[var(--color-ice)]">
             Subscription plans
           </h2>
-          <div className="w-full xl:max-w-xl xl:flex-1">
+          <div className="w-full lg:max-w-xl lg:flex-1">
             <ServerIdFilter
               label="Subscription plan lookup"
               placeholder="Enter subscription plan ID"
@@ -372,7 +372,7 @@ export function OrganizationSubscriptionPlansPageView() {
               setDeleteError("");
               setDeleteSuccess("");
             }}
-            className="rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/28"
+            className="self-start rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/28 lg:self-auto"
           >
             {showCreateForm ? "Close form" : "Create subscription plan"}
           </button>

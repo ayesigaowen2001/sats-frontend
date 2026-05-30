@@ -2,24 +2,34 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import { useAuth } from "@/hooks/useAuth";
+import { resetPasswordWithApi } from "@/lib/api/auth-client";
 
-export default function LoginPage() {
+interface ResetPasswordPageProps {
+  params: {
+    token: string;
+  };
+}
+
+export default function ResetPasswordPage({ params }: ResetPasswordPageProps) {
   const router = useRouter();
-  const login = useAuth((state) => state.login);
-  const [email, setEmail] = useState("kadogochristopher@gmail.com");
-  const [password, setPassword] = useState("Chris@1234");
+  const token = useMemo(() => decodeURIComponent(params.token), [params.token]);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8">
       <section className="w-full max-w-xl p-2 sm:p-4 lg:p-6">
         <h2 className="text-3xl font-semibold text-[var(--color-ice)]">
-          Sign in
+          Reset password
         </h2>
+        <p className="mt-2 text-sm text-[var(--color-mist)]">
+          Enter and confirm your new password to finish resetting your account.
+        </p>
 
         <form
           className="mt-8 space-y-5"
@@ -27,16 +37,40 @@ export default function LoginPage() {
             event.preventDefault();
 
             setErrorMessage("");
+            setSuccessMessage("");
+
+            if (!newPassword || !confirmPassword) {
+              setErrorMessage("Both password fields are required.");
+              return;
+            }
+
+            if (newPassword !== confirmPassword) {
+              setErrorMessage("Passwords do not match.");
+              return;
+            }
+
             setIsSubmitting(true);
 
             try {
-              await login({ email, password });
-              router.push("/apps");
+              const response = await resetPasswordWithApi({
+                token,
+                newPassword,
+                confirmPassword,
+              });
+
+              setSuccessMessage(
+                response.message ||
+                  "Password reset successful. Redirecting to sign in...",
+              );
+
+              setTimeout(() => {
+                router.push("/login");
+              }, 1200);
             } catch (error) {
               setErrorMessage(
                 error instanceof Error
                   ? error.message
-                  : "Unable to sign in. Please try again.",
+                  : "Unable to reset password.",
               );
             } finally {
               setIsSubmitting(false);
@@ -45,12 +79,12 @@ export default function LoginPage() {
         >
           <label className="block">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Email
+              New password
             </span>
             <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
               required
               className="mt-2 w-full rounded-[1.2rem] border border-[var(--color-shell-border)] bg-black/15 px-4 py-3 text-[var(--color-ice)] outline-none transition-colors focus:border-[var(--color-sand)]/50"
             />
@@ -58,12 +92,12 @@ export default function LoginPage() {
 
           <label className="block">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Password
+              Confirm password
             </span>
             <input
               type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
               required
               className="mt-2 w-full rounded-[1.2rem] border border-[var(--color-shell-border)] bg-black/15 px-4 py-3 text-[var(--color-ice)] outline-none transition-colors focus:border-[var(--color-sand)]/50"
             />
@@ -75,23 +109,29 @@ export default function LoginPage() {
             </p>
           ) : null}
 
+          {successMessage ? (
+            <p className="rounded-[1rem] border border-emerald-300/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+              {successMessage}
+            </p>
+          ) : null}
+
           <button
             type="submit"
             disabled={isSubmitting}
             className="w-full rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white transition-colors hover:bg-[var(--color-sand)]/26"
           >
-            {isSubmitting ? "Signing in..." : "Sign In"}
+            {isSubmitting ? "Resetting..." : "Reset password"}
           </button>
-
-          <div className="flex justify-end">
-            <Link
-              href="/forgot-password"
-              className="text-sm text-[var(--color-sand)] transition-colors hover:text-[var(--color-ice)]"
-            >
-              Forgot password?
-            </Link>
-          </div>
         </form>
+
+        <p className="mt-5 text-sm text-[var(--color-mist)]">
+          <Link
+            href="/login"
+            className="text-[var(--color-sand)] transition-colors hover:text-[var(--color-ice)]"
+          >
+            Back to sign in
+          </Link>
+        </p>
       </section>
     </main>
   );

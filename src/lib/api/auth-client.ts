@@ -28,6 +28,19 @@ export interface LoginResponse {
   user: LoginApiUser;
 }
 
+interface ApiMessageResponse {
+  message?: string;
+}
+
+async function getApiErrorMessage(response: Response, fallback: string) {
+  try {
+    const body = (await response.json()) as ApiMessageResponse;
+    return body.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function fetchCurrentUser(accessToken: string): Promise<LoginApiUser> {
   const response = await fetch(`${appConfig.apiBaseUrl}/users/me`, {
     method: "GET",
@@ -73,4 +86,108 @@ export async function loginWithApi(payload: LoginRequest) {
 
   console.log("Login response:", data);
   return data;
+}
+
+export async function forgotPasswordWithApi(email: string) {
+  const response = await fetch(
+    `${appConfig.apiBaseUrl}/users/forgot-password`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email }),
+    },
+  );
+
+  if (!response.ok) {
+    const message = await getApiErrorMessage(
+      response,
+      `Forgot password request failed with status ${response.status}`,
+    );
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as ApiMessageResponse;
+}
+
+export async function resetPasswordWithApi(payload: {
+  token: string;
+  newPassword: string;
+  confirmPassword: string;
+}) {
+  const response = await fetch(
+    `${appConfig.apiBaseUrl}/users/reset-password/${encodeURIComponent(payload.token)}`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        new_password: payload.newPassword,
+        confirm_password: payload.confirmPassword,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const message = await getApiErrorMessage(
+      response,
+      `Password reset failed with status ${response.status}`,
+    );
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as ApiMessageResponse;
+}
+
+export async function verifyEmailWithApi(token: string) {
+  const response = await fetch(
+    `${appConfig.apiBaseUrl}/users/verify-email/${encodeURIComponent(token)}`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const message = await getApiErrorMessage(
+      response,
+      `Email verification failed with status ${response.status}`,
+    );
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as ApiMessageResponse;
+}
+
+export async function resendVerificationWithApi(accessToken: string) {
+  const response = await fetch(
+    `${appConfig.apiBaseUrl}/users/me/resend-verification`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const message = await getApiErrorMessage(
+      response,
+      `Resend verification failed with status ${response.status}`,
+    );
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as ApiMessageResponse;
 }

@@ -41,6 +41,10 @@ interface OrganizationOption {
 interface AnimalOption {
   id: string;
   animalNumber: string;
+  commonName: string;
+  gender: string;
+  age: number;
+  weightKg: number;
 }
 
 interface DeviceOption {
@@ -52,6 +56,8 @@ interface PathGroup {
   animalId: string;
   points: TrackingLogRecord[];
 }
+
+type MapViewMode = "streets" | "satellite";
 
 const defaultFilters: TrackingFilterValues = {
   organization_id: "",
@@ -94,22 +100,39 @@ function toIsoTimestamp(value: string): string {
   return parsed.toISOString();
 }
 
-function buildPopupHtml(log: TrackingLogRecord) {
+function buildPopupHtml(
+  log: TrackingLogRecord,
+  animal: AnimalOption | null,
+  device: DeviceOption | null,
+) {
   const speed = log.speedKmh === null ? "-" : `${log.speedKmh.toFixed(2)} km/h`;
   const direction =
     log.directionDegrees === null
       ? "-"
       : `${log.directionDegrees.toFixed(2)} deg`;
 
+  const animalTitle = animal
+    ? `${animal.animalNumber} - ${animal.commonName}`
+    : log.animalId;
+  const gender = animal?.gender || "-";
+  const age = typeof animal?.age === "number" ? `${animal.age} yrs` : "-";
+  const weight =
+    typeof animal?.weightKg === "number"
+      ? `${animal.weightKg.toFixed(1)} kg`
+      : "-";
+  const deviceValue = device?.deviceSerial || log.deviceId;
+
   return `
     <div style="min-width: 220px; color: #0f172a; font-family: system-ui, sans-serif;">
       <div style="font-weight: 700; margin-bottom: 6px;">Tracking Point</div>
-      <div><strong>Animal:</strong> ${log.animalId}</div>
-      <div><strong>Device:</strong> ${log.deviceId}</div>
+      <div><strong>Animal:</strong> ${animalTitle}</div>
+      <div><strong>Gender:</strong> ${gender}</div>
+      <div><strong>Age:</strong> ${age}</div>
+      <div><strong>Weight:</strong> ${weight}</div>
+      <div><strong>Device:</strong> ${deviceValue}</div>
       <div><strong>Timestamp:</strong> ${new Date(log.timestamp).toLocaleString()}</div>
       <div><strong>Speed:</strong> ${speed}</div>
       <div><strong>Direction:</strong> ${direction}</div>
-      <div><strong>Coordinates:</strong> ${log.latitude.toFixed(5)}, ${log.longitude.toFixed(5)}</div>
     </div>
   `;
 }
@@ -130,6 +153,7 @@ function normalizeFilterValues(
 export function TrackingLiveMapPageView() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
+  const activeMapStyleRef = useRef<MapViewMode>("streets");
   const markerRefs = useRef<any[]>([]);
   const lineLayerIdsRef = useRef<string[]>([]);
   const lineSourceIdsRef = useRef<string[]>([]);
@@ -140,7 +164,6 @@ export function TrackingLiveMapPageView() {
   const [organizationOptions, setOrganizationOptions] = useState<
     OrganizationOption[]
   >([]);
-  const [organizationSearch, setOrganizationSearch] = useState("");
 
   const [filters, setFilters] = useState<TrackingFilterValues>(defaultFilters);
   const [appliedFilters, setAppliedFilters] =
@@ -148,7 +171,6 @@ export function TrackingLiveMapPageView() {
 
   const [showFilters, setShowFilters] = useState(false);
 
-  const [animalSearch, setAnimalSearch] = useState("");
   const [deviceSearch, setDeviceSearch] = useState("");
 
   const [rows, setRows] = useState<TrackingLogRecord[]>([]);
@@ -159,10 +181,42 @@ export function TrackingLiveMapPageView() {
     DeviceOption[]
   >([]);
 
+  const animalById = useMemo(() => {
+    return new Map(
+      organizationAnimalOptions.map((animal) => [animal.id, animal]),
+    );
+  }, [organizationAnimalOptions]);
+
+  const deviceById = useMemo(() => {
+    return new Map(
+      organizationDeviceOptions.map((device) => [device.id, device]),
+    );
+  }, [organizationDeviceOptions]);
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [pagination, setPagination] = useState<TrackingPagination | null>(null);
+  const [mapViewMode, setMapViewMode] = useState<MapViewMode>("streets");
+  const [mapStyleReadyTick, setMapStyleReadyTick] = useState(0);
+
+  const mapStyleConfig = useMemo(() => {
+    const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
+
+    if (mapTilerKey) {
+      return {
+        streets: `https://api.maptiler.com/maps/streets-v2/style.json?key=${mapTilerKey}`,
+        satellite: `https://api.maptiler.com/maps/hybrid/style.json?key=${mapTilerKey}`,
+        hasSatellite: true,
+      };
+    }
+
+    return {
+      streets: "https://demotiles.maplibre.org/style.json",
+      satellite: "https://demotiles.maplibre.org/style.json",
+      hasSatellite: false,
+    };
+  }, []);
 
   useEffect(() => {
     const sessionData = getSessionData();
@@ -177,28 +231,6 @@ export function TrackingLiveMapPageView() {
       ) ?? null,
     [filters.organization_id, organizationOptions],
   );
-
-  const filteredOrganizationOptions = useMemo(() => {
-    const query = organizationSearch.trim().toLowerCase();
-
-    if (!query) {
-      return organizationOptions;
-    }
-
-    return organizationOptions.filter((option) =>
-      option.name.toLowerCase().includes(query),
-    );
-  }, [organizationOptions, organizationSearch]);
-
-  const filteredAnimalOptions = useMemo(() => {
-    const query = animalSearch.trim().toLowerCase();
-
-    return organizationAnimalOptions.filter(
-      (option) =>
-        option.animalNumber.toLowerCase().includes(query) ||
-        option.id.toLowerCase().includes(query),
-    );
-  }, [animalSearch, organizationAnimalOptions]);
 
   const filteredDeviceOptions = useMemo(() => {
     const query = deviceSearch.trim().toLowerCase();
@@ -347,6 +379,10 @@ export function TrackingLiveMapPageView() {
             .map((animal) => ({
               id: animal.id,
               animalNumber: animal.animalNumber,
+              commonName: animal.commonName,
+              gender: animal.gender,
+              age: animal.age,
+              weightKg: animal.weightKg,
             }))
             .sort((a, b) => a.animalNumber.localeCompare(b.animalNumber));
 
@@ -427,16 +463,12 @@ export function TrackingLiveMapPageView() {
             ...current,
             organization_id: "",
           }));
-          setOrganizationSearch("");
           setRows([]);
           return;
         }
 
         const fallbackId = options[0]?.id ?? "";
         const selectedId = sessionOrganizationId || fallbackId;
-        const selectedName =
-          options.find((option) => option.id === selectedId)?.name ?? "";
-
         setFilters((current) => ({
           ...current,
           organization_id: selectedId,
@@ -445,7 +477,6 @@ export function TrackingLiveMapPageView() {
           ...current,
           organization_id: selectedId,
         }));
-        setOrganizationSearch(selectedName);
       } catch (requestError) {
         if (!isMounted) {
           return;
@@ -472,7 +503,6 @@ export function TrackingLiveMapPageView() {
     if (!organizationId) {
       setOrganizationAnimalOptions([]);
       setOrganizationDeviceOptions([]);
-      setAnimalSearch("");
       setDeviceSearch("");
       return;
     }
@@ -501,6 +531,10 @@ export function TrackingLiveMapPageView() {
             .map((animal) => ({
               id: animal.id,
               animalNumber: animal.animalNumber,
+              commonName: animal.commonName,
+              gender: animal.gender,
+              age: animal.age,
+              weightKg: animal.weightKg,
             }))
             .sort((a, b) => a.animalNumber.localeCompare(b.animalNumber)),
         );
@@ -543,10 +577,7 @@ export function TrackingLiveMapPageView() {
       }
 
       const maplibregl = (await import("maplibre-gl")).default;
-      const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
-      const styleUrl = mapTilerKey
-        ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${mapTilerKey}`
-        : "https://demotiles.maplibre.org/style.json";
+      const styleUrl = mapStyleConfig.streets;
 
       if (!active || !mapContainerRef.current) {
         return;
@@ -562,9 +593,11 @@ export function TrackingLiveMapPageView() {
 
       map.on("load", () => {
         map.addControl(new maplibregl.NavigationControl(), "top-right");
+        setMapStyleReadyTick((current) => current + 1);
       });
 
       mapRef.current = map;
+      activeMapStyleRef.current = "streets";
     };
 
     void initMap();
@@ -582,7 +615,34 @@ export function TrackingLiveMapPageView() {
         mapRef.current = null;
       }
     };
-  }, [clearPathLayers]);
+  }, [clearPathLayers, mapStyleConfig.streets]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+
+    if (!map) {
+      return;
+    }
+
+    if (mapViewMode === "satellite" && !mapStyleConfig.hasSatellite) {
+      return;
+    }
+
+    if (activeMapStyleRef.current === mapViewMode) {
+      return;
+    }
+
+    const nextStyle =
+      mapViewMode === "satellite"
+        ? mapStyleConfig.satellite
+        : mapStyleConfig.streets;
+
+    activeMapStyleRef.current = mapViewMode;
+    map.once("style.load", () => {
+      setMapStyleReadyTick((current) => current + 1);
+    });
+    map.setStyle(nextStyle);
+  }, [mapStyleConfig, mapViewMode]);
 
   useEffect(() => {
     void loadTracking();
@@ -663,6 +723,8 @@ export function TrackingLiveMapPageView() {
       const createdMarkers: any[] = [];
 
       mapRows.forEach((log) => {
+        const animal = animalById.get(log.animalId) ?? null;
+        const device = deviceById.get(log.deviceId) ?? null;
         const element = document.createElement("div");
         element.className =
           "h-3.5 w-3.5 rounded-full border border-white/90 shadow";
@@ -670,7 +732,7 @@ export function TrackingLiveMapPageView() {
           log.id === latestId ? "#f97316" : "#22c55e";
 
         const popup = new maplibregl.Popup({ offset: 16 }).setHTML(
-          buildPopupHtml(log),
+          buildPopupHtml(log, animal, device),
         );
 
         const marker = new maplibregl.Marker({ element })
@@ -695,7 +757,26 @@ export function TrackingLiveMapPageView() {
     return () => {
       cancelled = true;
     };
-  }, [clearPathLayers, isMovementMode, mapRows, pathGroups]);
+  }, [
+    animalById,
+    clearPathLayers,
+    deviceById,
+    isMovementMode,
+    mapStyleReadyTick,
+    mapRows,
+    pathGroups,
+  ]);
+
+  const rotateMap = () => {
+    const map = mapRef.current;
+
+    if (!map) {
+      return;
+    }
+
+    const nextBearing = (map.getBearing() + 45) % 360;
+    map.easeTo({ bearing: nextBearing, duration: 400 });
+  };
 
   const applyFilters = (nextFilters: TrackingFilterValues) => {
     const normalized = normalizeFilterValues(nextFilters);
@@ -724,7 +805,6 @@ export function TrackingLiveMapPageView() {
     };
 
     setSuccessMessage("");
-    setAnimalSearch("");
     setDeviceSearch("");
     applyFilters(reset);
   };
@@ -744,75 +824,65 @@ export function TrackingLiveMapPageView() {
               <span className="text-xs font-medium text-[var(--color-ice)]">
                 Organization
               </span>
-              <input
-                list="tracking-org-options"
-                value={organizationSearch}
+              <select
+                value={filters.organization_id}
                 onChange={(event) => {
-                  const nextValue = event.target.value;
-                  const matched = organizationOptions.find(
-                    (option) =>
-                      option.name.toLowerCase() ===
-                      nextValue.trim().toLowerCase(),
-                  );
-
-                  setOrganizationSearch(nextValue);
+                  const selectedOrganizationId = event.target.value;
                   setFilters((current) => ({
                     ...current,
-                    organization_id: matched?.id ?? "",
+                    organization_id: selectedOrganizationId,
                     animal_id: "",
                     device_id: "",
                     page: "1",
                   }));
-                  setAnimalSearch("");
                   setDeviceSearch("");
                 }}
-                placeholder="Search organization"
                 className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none"
-              />
-              <datalist id="tracking-org-options">
-                {filteredOrganizationOptions.map((option) => (
-                  <option key={option.id} value={option.name} />
+              >
+                <option value="" className="text-black">
+                  Select organization
+                </option>
+                {organizationOptions.map((option) => (
+                  <option
+                    key={option.id}
+                    value={option.id}
+                    className="text-black"
+                  >
+                    {option.name}
+                  </option>
                 ))}
-              </datalist>
+              </select>
             </label>
 
             <label className="flex-1 min-w-[10rem] max-w-[14rem]">
               <span className="text-xs font-medium text-[var(--color-ice)]">
                 Animal number
               </span>
-              <input
-                list="tracking-animal-options"
-                value={animalSearch}
+              <select
+                value={filters.animal_id}
                 disabled={!canEditTrackingFilters}
                 onChange={(event) => {
-                  const nextValue = event.target.value;
-                  const matched = organizationAnimalOptions.find(
-                    (option) =>
-                      option.animalNumber.toLowerCase() ===
-                        nextValue.trim().toLowerCase() ||
-                      option.id.toLowerCase() ===
-                        nextValue.trim().toLowerCase(),
-                  );
-
-                  setAnimalSearch(nextValue);
                   setFilters((current) => ({
                     ...current,
-                    animal_id: matched?.id ?? "",
+                    animal_id: event.target.value,
                     page: "1",
                   }));
                 }}
-                placeholder="Search animal"
                 className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none disabled:opacity-60"
-              />
-              <datalist id="tracking-animal-options">
-                {filteredAnimalOptions.map((animal) => (
+              >
+                <option value="" className="text-black">
+                  Select animal
+                </option>
+                {organizationAnimalOptions.map((animal) => (
                   <option
                     key={animal.id}
-                    value={animal.animalNumber}
-                    label={animal.id}
-                  />
+                    value={animal.id}
+                    className="text-black"
+                  >
+                    {animal.animalNumber} - {animal.commonName}
+                  </option>
                 ))}
-              </datalist>
+              </select>
             </label>
 
             <label className="flex-1 min-w-[10rem] max-w-[14rem]">
@@ -976,7 +1046,50 @@ export function TrackingLiveMapPageView() {
 
       {/* ── Map ── */}
       <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+          <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-xl border border-white/20 bg-[rgba(7,22,32,0.72)] p-2 backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={() => setMapViewMode("streets")}
+              className={`flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
+                mapViewMode === "streets"
+                  ? "bg-[var(--color-sand)]/24 text-[var(--color-ice)]"
+                  : "text-[var(--color-mist)] hover:bg-white/10"
+              }`}
+              aria-label="Streets view"
+              title="Streets view"
+            >
+              <span className="pi pi-map text-sm" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              disabled={!mapStyleConfig.hasSatellite}
+              onClick={() => setMapViewMode("satellite")}
+              className={`flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
+                mapViewMode === "satellite"
+                  ? "bg-[var(--color-sand)]/24 text-[var(--color-ice)]"
+                  : "text-[var(--color-mist)] hover:bg-white/10"
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+              title={
+                mapStyleConfig.hasSatellite
+                  ? "Satellite view with labels"
+                  : "Satellite view requires NEXT_PUBLIC_MAPTILER_API_KEY"
+              }
+              aria-label="Satellite view"
+            >
+              <span className="pi pi-image text-sm" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={rotateMap}
+              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/15 text-[var(--color-ice)] transition-colors hover:bg-white/10"
+              title="Rotate map"
+              aria-label="Rotate map 45 degrees"
+            >
+              <span className="pi pi-refresh text-sm" aria-hidden="true" />
+            </button>
+          </div>
+
           <div ref={mapContainerRef} className="h-[35rem] w-full" />
         </div>
       </div>
@@ -1004,7 +1117,15 @@ export function TrackingLiveMapPageView() {
             columns={[
               {
                 header: "Animal",
-                render: (row) => row.animalId,
+                render: (row) => {
+                  const animal = animalById.get(row.animalId);
+
+                  if (!animal) {
+                    return row.animalId;
+                  }
+
+                  return `${animal.animalNumber} - ${animal.commonName}`;
+                },
               },
               {
                 header: "Device",

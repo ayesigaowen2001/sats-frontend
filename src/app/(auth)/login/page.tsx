@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -81,6 +82,15 @@ export default function LoginPage() {
           >
             {isSubmitting ? "Signing in..." : "Sign In"}
           </button>
+
+          <div className="flex justify-end">
+            <Link
+              href="/forgot-password"
+              className="text-sm text-[var(--color-sand)] transition-colors hover:text-[var(--color-ice)]"
+            >
+              Forgot password?
+            </Link>
+          </div>
         </form>
       </section>
     </main>

@@ -21,7 +21,17 @@ const moduleIconMap: Record<string, string> = {
 };
 
 export function ModuleHubPage() {
-  const modules = primaryNavigation.filter((item) => item.key !== "overview");
+  const hiddenModuleKeys = new Set([
+    "filters",
+    "notifications",
+    "reports",
+    "migration",
+    "system-management",
+  ]);
+
+  const modules = primaryNavigation.filter(
+    (item) => item.key !== "overview" && !hiddenModuleKeys.has(item.key),
+  );
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-2 py-2 sm:px-4 sm:py-4 lg:px-6 lg:py-6">
