@@ -5,10 +5,18 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
+import { ResourceFeedback } from "@/components/resource-feedback";
 import {
   getDashboardModule,
   getDefaultSidebarItem,
 } from "@/lib/dashboard-config";
+import {
+  getSessionData,
+  setSessionPermissions,
+  type SessionData,
+} from "@/lib/auth-tokens";
+import { canAccessPath } from "@/lib/rbac";
+import { roleService } from "@/lib/users/role-service";
 import "@/lib/session-debug"; // Initialize session debug utilities
 
 interface ModuleLayoutProps {
@@ -19,6 +27,9 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
+  const [sessionData, setSessionData] = useState<SessionData | null>(null);
+  const [permissionsReady, setPermissionsReady] = useState(false);
   const isModuleHub = pathname === "/" || pathname === "/apps";
   const currentModule = getDashboardModule(pathname);
   const defaultSidebarItem = getDefaultSidebarItem(pathname);
@@ -28,10 +39,54 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
       return;
     }
 
+    setSessionData(getSessionData());
+    setHasHydrated(true);
+
     if (window.matchMedia("(min-width: 1024px)").matches) {
       setIsSidebarOpen(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    if (!sessionData) {
+      setPermissionsReady(true);
+      return;
+    }
+
+    if (typeof sessionData.permissions !== "undefined") {
+      setPermissionsReady(true);
+      return;
+    }
+
+    let isActive = true;
+
+    void (async () => {
+      try {
+        const permissions = await roleService.getMyPermissions();
+
+        if (!isActive) {
+          return;
+        }
+
+        setSessionPermissions(permissions);
+        setSessionData(getSessionData());
+      } catch (error) {
+        console.warn("Failed to load stored permissions:", error);
+      } finally {
+        if (isActive) {
+          setPermissionsReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [hasHydrated, sessionData]);
 
   useEffect(() => {
     if (isModuleHub) {
@@ -55,6 +110,34 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
       router.replace(defaultSidebarItem.href);
     }
   }, [currentModule.href, defaultSidebarItem, isModuleHub, pathname, router]);
+
+  if (!hasHydrated || !permissionsReady) {
+    return <ResourceFeedback state="loading" resourceName="permissions" />;
+  }
+
+  if (!sessionData) {
+    return (
+      <ResourceFeedback
+        title="Access required"
+        detail="Sign in to view this workspace."
+      />
+    );
+  }
+
+  if (
+    !canAccessPath(
+      pathname,
+      sessionData.permissions ?? [],
+      Boolean(sessionData.user.is_system_admin),
+    )
+  ) {
+    return (
+      <ResourceFeedback
+        title="Access denied"
+        detail="Your account does not have permission to open this workspace."
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-[var(--color-night)] text-[var(--color-ice)]">

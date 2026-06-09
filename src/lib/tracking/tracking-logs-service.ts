@@ -9,8 +9,10 @@ interface ApiErrorPayload {
 
 interface TrackingLogApiModel {
   id: string;
-  animal_id: string;
-  device_id: string;
+  animal_id?: string;
+  animal_number?: string;
+  device_id?: string;
+  device_number?: string;
   timestamp: string;
   location?: {
     type?: string;
@@ -92,6 +94,22 @@ function parseNumber(value: string | number | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function pickText(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
+function isUuidLike(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 function mapTrackingLog(item: TrackingLogApiModel): TrackingLogRecord | null {
   const coordinates = item.location?.coordinates;
 
@@ -108,8 +126,8 @@ function mapTrackingLog(item: TrackingLogApiModel): TrackingLogRecord | null {
 
   return {
     id: item.id,
-    animalId: item.animal_id,
-    deviceId: item.device_id,
+    animalId: pickText(item.animal_number, item.animal_id),
+    deviceId: pickText(item.device_number, item.device_id),
     timestamp: item.timestamp,
     longitude,
     latitude,
@@ -178,11 +196,23 @@ export class TrackingLogsService {
     const query = new URLSearchParams();
 
     if (filters.animal_id?.trim()) {
-      query.set("animal_id", filters.animal_id.trim());
+      const animalFilter = filters.animal_id.trim();
+
+      if (isUuidLike(animalFilter)) {
+        query.set("animal_id", animalFilter);
+      } else {
+        query.set("animal_number", animalFilter);
+      }
     }
 
     if (filters.device_id?.trim()) {
-      query.set("device_id", filters.device_id.trim());
+      const deviceFilter = filters.device_id.trim();
+
+      if (isUuidLike(deviceFilter)) {
+        query.set("device_id", deviceFilter);
+      } else {
+        query.set("device_number", deviceFilter);
+      }
     }
 
     if (filters.from_ts?.trim()) {

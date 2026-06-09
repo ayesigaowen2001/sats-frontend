@@ -146,6 +146,9 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRefs = useRef<MapLibreMarker[]>([]);
+  const geofenceSourceIdRef = useRef("geofence-events-polygons-source");
+  const geofenceFillLayerIdRef = useRef("geofence-events-polygons-fill");
+  const geofenceLineLayerIdRef = useRef("geofence-events-polygons-line");
 
   const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [sessionOrganizationId, setSessionOrganizationId] = useState("");
@@ -174,6 +177,7 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
   const [pagination, setPagination] = useState<GeofenceEventPagination | null>(
     null,
   );
+  const [mapReadyTick, setMapReadyTick] = useState(0);
 
   useEffect(() => {
     const sessionData = getSessionData();
@@ -356,13 +360,26 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
 
     const loadOrganizationEntities = async () => {
       try {
-        const [animals, geofences] = await Promise.all([
+        const [animals, listedGeofences] = await Promise.all([
           animalsService.listAnimals(organizationId, {
             page: 1,
             per_page: 100,
           }),
           geofencesService.listGeofences(organizationId),
         ]);
+
+        const detailedGeofences = await Promise.all(
+          listedGeofences.map(async (geofence) => {
+            try {
+              return await geofencesService.getGeofenceById(
+                organizationId,
+                geofence.id,
+              );
+            } catch {
+              return geofence;
+            }
+          }),
+        );
 
         if (!isMounted) {
           return;
@@ -378,7 +395,9 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
         );
 
         setGeofenceOptions(
-          geofences.sort((a, b) => a.parkName.localeCompare(b.parkName)),
+          detailedGeofences.sort((a, b) =>
+            a.parkName.localeCompare(b.parkName),
+          ),
         );
       } catch (requestError) {
         if (!isMounted) {
@@ -430,6 +449,7 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
 
       map.on("load", () => {
         map.addControl(new maplibregl.NavigationControl(), "top-right");
+        setMapReadyTick((current) => current + 1);
       });
 
       mapRef.current = map;
@@ -453,6 +473,97 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
   useEffect(() => {
     void loadGeofenceEvents();
   }, [loadGeofenceEvents]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+
+    if (!map) {
+      return;
+    }
+
+    const sourceId = geofenceSourceIdRef.current;
+    const fillLayerId = geofenceFillLayerIdRef.current;
+    const lineLayerId = geofenceLineLayerIdRef.current;
+
+    if (map.getLayer(fillLayerId)) {
+      map.removeLayer(fillLayerId);
+    }
+
+    if (map.getLayer(lineLayerId)) {
+      map.removeLayer(lineLayerId);
+    }
+
+    if (map.getSource(sourceId)) {
+      map.removeSource(sourceId);
+    }
+
+    if (!geofenceOptions.length) {
+      return;
+    }
+
+    const polygonFeatures = geofenceOptions
+      .filter((geofence) => {
+        const firstRing = geofence.boundary.coordinates?.[0];
+        return Array.isArray(firstRing) && firstRing.length >= 4;
+      })
+      .map((geofence) => ({
+        type: "Feature" as const,
+        properties: {
+          id: geofence.id,
+          parkName: geofence.parkName,
+        },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: geofence.boundary.coordinates,
+        },
+      }));
+
+    if (!polygonFeatures.length) {
+      return;
+    }
+
+    map.addSource(sourceId, {
+      type: "geojson",
+      data: {
+        type: "FeatureCollection" as const,
+        features: polygonFeatures,
+      },
+    });
+
+    map.addLayer({
+      id: fillLayerId,
+      type: "fill",
+      source: sourceId,
+      paint: {
+        "fill-color": "#06b6d4",
+        "fill-opacity": 0.1,
+      },
+    });
+
+    map.addLayer({
+      id: lineLayerId,
+      type: "line",
+      source: sourceId,
+      paint: {
+        "line-color": "#22d3ee",
+        "line-width": 2,
+      },
+    });
+
+    return () => {
+      if (map.getLayer(fillLayerId)) {
+        map.removeLayer(fillLayerId);
+      }
+
+      if (map.getLayer(lineLayerId)) {
+        map.removeLayer(lineLayerId);
+      }
+
+      if (map.getSource(sourceId)) {
+        map.removeSource(sourceId);
+      }
+    };
+  }, [geofenceOptions, mapReadyTick]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -687,7 +798,7 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
                     page: "1",
                   }))
                 }
-                className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none disabled:opacity-60"
+                className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none [&_option]:bg-slate-900 [&_option]:text-white disabled:opacity-60"
               >
                 <option value="">All</option>
                 {geofenceEventStatuses.map((status) => (

@@ -74,7 +74,7 @@ export interface AssignPermissionsInput {
 }
 
 export interface AssignRolesToUserInput {
-  role_ids: number[];
+  role_ids: Array<number | string>;
 }
 
 export interface RolePermissionRecord {

@@ -9,7 +9,8 @@ import {
   getDashboardModule,
   getDefaultSidebarItem,
 } from "@/lib/dashboard-config";
-import { getSessionData } from "@/lib/auth-tokens";
+import { getSessionData, type SessionData } from "@/lib/auth-tokens";
+import { canAccessPath } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -23,12 +24,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const isAppsActive = pathname === "/apps" || pathname === "/";
   const currentModule = getDashboardModule(pathname);
   const defaultSidebarItem = getDefaultSidebarItem(pathname);
-  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [sessionData, setSessionData] = useState<SessionData | null>(null);
 
   // Read session data only after hydration to avoid mismatch
   useEffect(() => {
-    setIsSystemAdmin(Boolean(getSessionData()?.user.is_system_admin));
+    setSessionData(getSessionData());
     setHasHydrated(true);
   }, []);
 
@@ -38,9 +39,21 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const moduleItems: MenuItem[] = currentModule.items
     .filter((item) => item.label.trim().toLowerCase() !== "dashboard")
+    .filter((item) => {
+      if (!sessionData) {
+        return true;
+      }
+
+      return canAccessPath(
+        item.href,
+        sessionData.permissions ?? [],
+        Boolean(sessionData.user.is_system_admin),
+      );
+    })
     .map((item) => {
       const displayLabel =
-        !isSystemAdmin && item.href === "/organization/all-organizations"
+        !sessionData?.user.is_system_admin &&
+        item.href === "/organization/all-organizations"
           ? "My organisation"
           : item.label;
 

@@ -362,6 +362,12 @@ interface DrawEvent {
 type MapInstance = {
   addControl: (control: unknown, position?: string) => void;
   removeControl: (control: unknown) => void;
+  addSource: (id: string, source: unknown) => void;
+  getSource: (id: string) => unknown;
+  removeSource: (id: string) => void;
+  addLayer: (layer: unknown, beforeId?: string) => void;
+  getLayer: (id: string) => unknown;
+  removeLayer: (id: string) => void;
   on: (eventName: string, callback: (event?: DrawEvent) => void) => void;
   off: (eventName: string, callback: (event?: DrawEvent) => void) => void;
   doubleClickZoom?: {
@@ -430,6 +436,10 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   const DrawConstructorRef = useRef<DrawConstructor | null>(null);
   const mapRef = useRef<MapInstance | null>(null);
   const drawRef = useRef<DrawInstance | null>(null);
+  const geofenceSourceIdRef = useRef("geofence-polygons-source");
+  const geofenceFillLayerIdRef = useRef("geofence-polygons-fill");
+  const geofenceLineLayerIdRef = useRef("geofence-polygons-line");
+  const [mapReadyTick, setMapReadyTick] = useState(0);
 
   const [rows, setRows] = useState<Geofence[] | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -508,7 +518,47 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       return [];
     }
 
-    return geofencesService.listGeofences(orgId);
+    const listedGeofences = await geofencesService.listGeofences(orgId);
+
+    if (!listedGeofences.length) {
+      return [];
+    }
+
+    const detailedGeofences = await Promise.all(
+      listedGeofences.map(async (geofence) => {
+        try {
+          return await geofencesService.getGeofenceById(orgId, geofence.id);
+        } catch {
+          return geofence;
+        }
+      }),
+    );
+
+    return detailedGeofences;
+  }, []);
+
+  const clearGeofencePolygonLayers = useCallback(() => {
+    const map = mapRef.current;
+
+    if (!map) {
+      return;
+    }
+
+    const fillLayerId = geofenceFillLayerIdRef.current;
+    const lineLayerId = geofenceLineLayerIdRef.current;
+    const sourceId = geofenceSourceIdRef.current;
+
+    if (map.getLayer(fillLayerId)) {
+      map.removeLayer(fillLayerId);
+    }
+
+    if (map.getLayer(lineLayerId)) {
+      map.removeLayer(lineLayerId);
+    }
+
+    if (map.getSource(sourceId)) {
+      map.removeSource(sourceId);
+    }
   }, []);
 
   const applyDrawCoordinatesToActiveForm = useCallback(
@@ -1010,6 +1060,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
           "[geofences] draw available methods:",
           Object.keys(drawAny).join(", "),
         );
+        setMapReadyTick((current) => current + 1);
       });
 
       map.on("draw.create", onDrawCreate);
@@ -1059,6 +1110,77 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       drawToolbarRef.current = null;
     };
   }, [ensureEditToolbarButton, handleDrawSync]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+
+    if (!map) {
+      return;
+    }
+
+    clearGeofencePolygonLayers();
+
+    if (!rows || !rows.length) {
+      return;
+    }
+
+    const sourceId = geofenceSourceIdRef.current;
+    const fillLayerId = geofenceFillLayerIdRef.current;
+    const lineLayerId = geofenceLineLayerIdRef.current;
+
+    const features = rows
+      .filter((geofence) => {
+        const firstRing = geofence.boundary.coordinates?.[0];
+        return Array.isArray(firstRing) && firstRing.length >= 4;
+      })
+      .map((geofence) => ({
+        type: "Feature",
+        properties: {
+          id: geofence.id,
+          park_name: geofence.parkName,
+        },
+        geometry: {
+          type: "Polygon",
+          coordinates: geofence.boundary.coordinates,
+        },
+      }));
+
+    if (!features.length) {
+      return;
+    }
+
+    map.addSource(sourceId, {
+      type: "geojson",
+      data: {
+        type: "FeatureCollection",
+        features,
+      },
+    });
+
+    map.addLayer({
+      id: fillLayerId,
+      type: "fill",
+      source: sourceId,
+      paint: {
+        "fill-color": "#22d3ee",
+        "fill-opacity": 0.12,
+      },
+    });
+
+    map.addLayer({
+      id: lineLayerId,
+      type: "line",
+      source: sourceId,
+      paint: {
+        "line-color": "#06b6d4",
+        "line-width": 2.5,
+      },
+    });
+
+    return () => {
+      clearGeofencePolygonLayers();
+    };
+  }, [clearGeofencePolygonLayers, mapReadyTick, rows, selectedOrgId]);
 
   useEffect(() => {
     ensureEditToolbarButton();

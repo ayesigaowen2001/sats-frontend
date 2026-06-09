@@ -182,15 +182,25 @@ export function TrackingLiveMapPageView() {
   >([]);
 
   const animalById = useMemo(() => {
-    return new Map(
-      organizationAnimalOptions.map((animal) => [animal.id, animal]),
-    );
+    const byAnyKey = new Map<string, AnimalOption>();
+
+    organizationAnimalOptions.forEach((animal) => {
+      byAnyKey.set(animal.id, animal);
+      byAnyKey.set(animal.animalNumber, animal);
+    });
+
+    return byAnyKey;
   }, [organizationAnimalOptions]);
 
   const deviceById = useMemo(() => {
-    return new Map(
-      organizationDeviceOptions.map((device) => [device.id, device]),
-    );
+    const byAnyKey = new Map<string, DeviceOption>();
+
+    organizationDeviceOptions.forEach((device) => {
+      byAnyKey.set(device.id, device);
+      byAnyKey.set(device.deviceSerial, device);
+    });
+
+    return byAnyKey;
   }, [organizationDeviceOptions]);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -397,17 +407,17 @@ export function TrackingLiveMapPageView() {
           setOrganizationDeviceOptions(deviceOptions);
         }
 
-        const organizationAnimalIdSet = new Set(
-          animalOptions.map((animal) => animal.id),
+        const organizationAnimalKeySet = new Set(
+          animalOptions.flatMap((animal) => [animal.id, animal.animalNumber]),
         );
-        const organizationDeviceIdSet = new Set(
-          deviceOptions.map((device) => device.id),
+        const organizationDeviceKeySet = new Set(
+          deviceOptions.flatMap((device) => [device.id, device.deviceSerial]),
         );
 
         scopedItems = response.items.filter(
           (item) =>
-            organizationAnimalIdSet.has(item.animalId) ||
-            organizationDeviceIdSet.has(item.deviceId),
+            organizationAnimalKeySet.has(item.animalId) ||
+            organizationDeviceKeySet.has(item.deviceId),
         );
 
         scopedPagination = {
@@ -876,7 +886,7 @@ export function TrackingLiveMapPageView() {
                 {organizationAnimalOptions.map((animal) => (
                   <option
                     key={animal.id}
-                    value={animal.id}
+                    value={animal.animalNumber}
                     className="text-black"
                   >
                     {animal.animalNumber} - {animal.commonName}
@@ -906,7 +916,7 @@ export function TrackingLiveMapPageView() {
                   setDeviceSearch(nextValue);
                   setFilters((current) => ({
                     ...current,
-                    device_id: matched?.id ?? "",
+                    device_id: matched?.deviceSerial ?? "",
                     page: "1",
                   }));
                 }}
@@ -917,8 +927,8 @@ export function TrackingLiveMapPageView() {
                 {filteredDeviceOptions.map((device) => (
                   <option
                     key={device.id}
-                    value={device.id}
-                    label={device.deviceSerial}
+                    value={device.deviceSerial}
+                    label={device.id}
                   />
                 ))}
               </datalist>

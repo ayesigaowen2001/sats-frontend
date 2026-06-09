@@ -11,7 +11,8 @@ type GeofenceEventStatus = "Inside" | "Outside" | "Border" | "Breach";
 
 interface GeofenceEventApiModel {
   id: string;
-  animal_id: string;
+  animal_id?: string;
+  animal_number?: string;
   geofence_id: string;
   tracking_log_id: string;
   timestamp: string;
@@ -77,6 +78,22 @@ export interface GeofenceEventListResult {
   message: string;
 }
 
+function pickText(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 function mapGeofenceEvent(
   item: GeofenceEventApiModel,
 ): GeofenceEventRecord | null {
@@ -95,7 +112,7 @@ function mapGeofenceEvent(
 
   return {
     id: item.id,
-    animalId: item.animal_id,
+    animalId: pickText(item.animal_number, item.animal_id),
     geofenceId: item.geofence_id,
     trackingLogId: item.tracking_log_id,
     timestamp: item.timestamp,
@@ -164,7 +181,13 @@ export class GeofenceEventsService {
     const query = new URLSearchParams();
 
     if (filters.animal_id?.trim()) {
-      query.set("animal_id", filters.animal_id.trim());
+      const animalFilter = filters.animal_id.trim();
+
+      if (isUuidLike(animalFilter)) {
+        query.set("animal_id", animalFilter);
+      } else {
+        query.set("animal_number", animalFilter);
+      }
     }
 
     if (filters.geofence_id?.trim()) {

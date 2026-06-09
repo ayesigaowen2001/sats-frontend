@@ -1,3 +1,5 @@
+import type { PermissionGrant } from "@/lib/rbac";
+
 const ACCESS_TOKEN_KEY = "sats_access_token";
 const REFRESH_TOKEN_KEY = "sats_refresh_token";
 const TOKEN_TYPE_KEY = "sats_token_type";
@@ -18,6 +20,7 @@ export interface SessionData {
   tokenType: string;
   expiresIn: number;
   expiryTime: number; // Unix timestamp when token expires
+  permissions?: PermissionGrant[];
   user: {
     id: string;
     name: string;
@@ -39,7 +42,11 @@ function canUseStorage() {
   return typeof window !== "undefined";
 }
 
-export function setAuthTokens(tokens: StoredAuthTokens, user?: any) {
+export function setAuthTokens(
+  tokens: StoredAuthTokens,
+  user?: any,
+  permissions?: PermissionGrant[],
+) {
   if (!canUseStorage()) {
     return;
   }
@@ -61,12 +68,28 @@ export function setAuthTokens(tokens: StoredAuthTokens, user?: any) {
       tokenType: tokens.tokenType,
       expiresIn: tokens.expiresIn,
       expiryTime,
+      permissions: permissions ?? [],
       user,
       loginTime: now,
     };
     window.localStorage.setItem(SESSION_DATA_KEY, JSON.stringify(sessionData));
     console.log("Session data stored:", sessionData);
   }
+}
+
+export function setSessionPermissions(permissions: PermissionGrant[]) {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  const sessionData = getSessionData();
+
+  if (!sessionData) {
+    return;
+  }
+
+  sessionData.permissions = permissions;
+  window.localStorage.setItem(SESSION_DATA_KEY, JSON.stringify(sessionData));
 }
 
 export function getAccessToken() {
@@ -84,6 +107,10 @@ export function getSessionData(): SessionData | null {
 
   const data = window.localStorage.getItem(SESSION_DATA_KEY);
   return data ? JSON.parse(data) : null;
+}
+
+export function getSessionPermissions(): PermissionGrant[] {
+  return getSessionData()?.permissions ?? [];
 }
 
 export function getUserOrganizationId(): string {

@@ -7,7 +7,9 @@ import {
   clearAuthTokens,
   getAccessToken,
   setAuthTokens,
+  setSessionPermissions,
 } from "@/lib/auth-tokens";
+import { roleService } from "@/lib/users/role-service";
 import type { AppRole, AppUser } from "@/types";
 
 interface AuthState {
@@ -45,6 +47,16 @@ export const useAuthStore = create<AuthState>((set) => ({
       },
       response.user, // Pass user data for comprehensive session storage
     );
+
+    try {
+      const permissions = await roleService.getMyPermissions();
+      setSessionPermissions(permissions);
+    } catch (error) {
+      clearAuthTokens();
+      throw error instanceof Error
+        ? error
+        : new Error("Unable to load permissions for the signed-in user.");
+    }
 
     set({
       isAuthenticated: true,

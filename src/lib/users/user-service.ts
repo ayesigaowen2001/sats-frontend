@@ -114,6 +114,31 @@ function mapUser(item: UserApiModel): UserRecord {
   };
 }
 
+function applyLocalUserFilters(
+  items: UserRecord[],
+  filters: UserListFilters,
+): UserRecord[] {
+  return items.filter((item) => {
+    if (typeof filters.is_system_admin === "boolean") {
+      if (item.isSystemAdmin !== filters.is_system_admin) {
+        return false;
+      }
+    }
+
+    if (typeof filters.is_node === "boolean") {
+      if (item.isNode !== filters.is_node) {
+        return false;
+      }
+    }
+
+    if (filters.status && item.status !== filters.status) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 export class UserService {
   private buildHeaders(
     includeContentType = true,
@@ -187,26 +212,34 @@ export class UserService {
       query.set("organization_id", filters.organization_id);
     }
 
-    if (typeof filters.is_system_admin === "boolean") {
-      query.set("is_system_admin", String(filters.is_system_admin));
-    }
-
-    if (typeof filters.is_node === "boolean") {
-      query.set("is_node", String(filters.is_node));
-    }
+    const hasBooleanFilters =
+      typeof filters.is_system_admin === "boolean" ||
+      typeof filters.is_node === "boolean";
 
     if (filters.status) {
       query.set("status", filters.status);
     }
 
-    const response = await fetch(
-      `${appConfig.apiBaseUrl}/users?${query.toString()}`,
-      {
+    const fetchUsers = async (requestQuery: URLSearchParams) =>
+      fetch(`${appConfig.apiBaseUrl}/users?${requestQuery.toString()}`, {
         method: "GET",
         headers,
         cache: "no-store",
-      },
-    );
+      });
+
+    let response = await fetchUsers(query);
+
+    if (!response.ok && response.status === 422 && hasBooleanFilters) {
+      const fallbackQuery = new URLSearchParams();
+      fallbackQuery.set("page", String(page));
+      fallbackQuery.set("per_page", String(perPage));
+
+      if (filters.status) {
+        fallbackQuery.set("status", filters.status);
+      }
+
+      response = await fetchUsers(fallbackQuery);
+    }
 
     if (!response.ok) {
       throw new Error(`Failed to load users: ${response.status}`);
@@ -214,9 +247,14 @@ export class UserService {
 
     const payload = (await response.json()) as UserListApiResponse;
 
+    const mappedItems = payload.items.map(mapUser);
+    const filteredItems = applyLocalUserFilters(mappedItems, filters);
+
     return {
-      items: payload.items.map(mapUser),
-      total: payload.pagination?.total ?? payload.items.length,
+      items: filteredItems,
+      total: hasBooleanFilters
+        ? filteredItems.length
+        : payload.pagination?.total ?? payload.items.length,
       page: payload.pagination?.page ?? page,
       perPage: payload.pagination?.per_page ?? perPage,
     };

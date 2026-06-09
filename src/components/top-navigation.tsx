@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   getNavigationItem,
@@ -10,6 +10,8 @@ import {
   navigationGroups,
   userTierLabels,
 } from "@/lib/navigation";
+import { getSessionData, type SessionData } from "@/lib/auth-tokens";
+import { canAccessPath } from "@/lib/rbac";
 import { useSatsStore } from "@/store/sats-store";
 
 interface TopNavigationProps {
@@ -31,11 +33,15 @@ export function TopNavigation({ children }: TopNavigationProps) {
   const currentOrganizationId = useSatsStore(
     (state) => state.currentOrganizationId,
   );
-  const organizationOptions = useSatsStore((state) => state.organizationOptions);
+  const organizationOptions = useSatsStore(
+    (state) => state.organizationOptions,
+  );
   const setCurrentTier = useSatsStore((state) => state.setCurrentTier);
   const setCurrentOrganizationId = useSatsStore(
     (state) => state.setCurrentOrganizationId,
   );
+  const [hasHydrated, setHasHydrated] = useState(false);
+  const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const currentPage = getNavigationItem(pathname);
   const currentGroup = navigationGroups.find(
     (group) => group.key === currentPage.group,
@@ -49,10 +55,27 @@ export function TopNavigation({ children }: TopNavigationProps) {
     fullName: "Amina Njoroge",
     tier: currentTier,
     organization:
-      organizationOptions.find((item) => item.id === currentOrganizationId)?.name ??
-      "SATS Platform Authority",
+      organizationOptions.find((item) => item.id === currentOrganizationId)
+        ?.name ?? "SATS Platform Authority",
   };
-  const visibleNavigation = getVisibleNavigationItems(currentTier);
+  useEffect(() => {
+    setSessionData(getSessionData());
+    setHasHydrated(true);
+  }, []);
+
+  const visibleNavigation = getVisibleNavigationItems(currentTier).filter(
+    (item) => {
+      if (!hasHydrated || !sessionData) {
+        return true;
+      }
+
+      return canAccessPath(
+        item.href,
+        sessionData.permissions ?? [],
+        Boolean(sessionData.user.is_system_admin),
+      );
+    },
+  );
   const groupedNavigation = navigationGroups.map((group) => ({
     ...group,
     items: visibleNavigation.filter((item) => item.group === group.key),
@@ -87,7 +110,9 @@ export function TopNavigation({ children }: TopNavigationProps) {
                 <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-fog)]">
                   User tier
                 </p>
-                <p className="mt-2 font-medium text-emerald-100">{userTierLabels[userContext.tier]}</p>
+                <p className="mt-2 font-medium text-emerald-100">
+                  {userTierLabels[userContext.tier]}
+                </p>
               </div>
             </div>
           </div>
@@ -215,11 +240,17 @@ export function TopNavigation({ children }: TopNavigationProps) {
                     <span className="mr-2">Role</span>
                     <select
                       value={currentTier}
-                      onChange={(event) => setCurrentTier(event.target.value as typeof currentTier)}
+                      onChange={(event) =>
+                        setCurrentTier(event.target.value as typeof currentTier)
+                      }
                       className="bg-transparent text-white outline-none"
                     >
                       {Object.entries(userTierLabels).map(([value, label]) => (
-                        <option key={value} value={value} className="text-black">
+                        <option
+                          key={value}
+                          value={value}
+                          className="text-black"
+                        >
                           {label}
                         </option>
                       ))}
@@ -229,7 +260,9 @@ export function TopNavigation({ children }: TopNavigationProps) {
                     <span className="mr-2">Org</span>
                     <select
                       value={currentOrganizationId}
-                      onChange={(event) => setCurrentOrganizationId(event.target.value)}
+                      onChange={(event) =>
+                        setCurrentOrganizationId(event.target.value)
+                      }
                       className="bg-transparent text-white outline-none"
                     >
                       {selectableOrganizations.map((organization) => (
