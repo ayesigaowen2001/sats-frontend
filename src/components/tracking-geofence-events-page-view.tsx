@@ -386,7 +386,7 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
         }
 
         setAnimalOptions(
-          animals
+          (animals.items ?? [])
             .map((animal) => ({
               id: animal.id,
               animalNumber: animal.animalNumber,

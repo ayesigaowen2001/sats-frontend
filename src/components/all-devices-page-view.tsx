@@ -37,9 +37,20 @@ interface AssignDeviceFormValues extends DeviceFormValues {
   organization_id: string;
 }
 
+interface ReallocateFormValues {
+  new_organization_id: string;
+}
+
 interface OrganizationOption {
   id: string;
   name: string;
+}
+
+interface FilterValues {
+  category_id: string;
+  status: string;
+  is_assigned: string;
+  device_number: string;
 }
 
 const defaultDeviceValues: DeviceFormValues = {
@@ -61,11 +72,24 @@ const defaultCreateValues: AssignDeviceFormValues = {
   ...defaultDeviceValues,
 };
 
+const defaultFilterValues: FilterValues = {
+  category_id: "",
+  status: "",
+  is_assigned: "",
+  device_number: "",
+};
+
 const statusOptions = [
   { value: "Active", label: "Active" },
   { value: "Inactive", label: "Inactive" },
   { value: "Maintenance", label: "Maintenance" },
   { value: "Retired", label: "Retired" },
+];
+
+const isAssignedOptions = [
+  { value: "", label: "All" },
+  { value: "true", label: "Assigned to animal" },
+  { value: "false", label: "Unassigned" },
 ];
 
 function toDateTimeLocalValue(value: string): string {
@@ -181,6 +205,19 @@ export function AllDevicesPageView() {
   const [assignError, setAssignError] = useState("");
   const [assignSuccess, setAssignSuccess] = useState("");
   const [isAssigning, setIsAssigning] = useState(false);
+
+  const [reallocatingDevice, setReallocatingDevice] =
+    useState<DeviceRecord | null>(null);
+  const [reallocateValues, setReallocateValues] =
+    useState<ReallocateFormValues>({ new_organization_id: "" });
+  const [reallocateError, setReallocateError] = useState("");
+  const [reallocateSuccess, setReallocateSuccess] = useState("");
+  const [isReallocating, setIsReallocating] = useState(false);
+
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const [filterValues, setFilterValues] =
+    useState<FilterValues>(defaultFilterValues);
+  const [isFiltering, setIsFiltering] = useState(false);
 
   const categoryOptions = useMemo(
     () =>
@@ -304,6 +341,19 @@ export function AllDevicesPageView() {
     [categoryOptions, organizationOptions, specificationOptions],
   );
 
+  const reallocateFormFields = useMemo<EntityFormField<ReallocateFormValues>[]>(
+    () => [
+      {
+        name: "new_organization_id",
+        label: "New Organization",
+        type: "select",
+        required: true,
+        options: organizationOptions,
+      },
+    ],
+    [organizationOptions],
+  );
+
   const assignFormFields = useMemo<EntityFormField<AssignDeviceFormValues>[]>(
     () => [
       {
@@ -390,6 +440,8 @@ export function AllDevicesPageView() {
     setDeleteSuccess("");
     setAssignError("");
     setAssignSuccess("");
+    setReallocateError("");
+    setReallocateSuccess("");
   };
 
   const loadDevices = useCallback(async () => {
@@ -464,6 +516,78 @@ export function AllDevicesPageView() {
     return () => {
       isMounted = false;
     };
+  }, [loadDevices]);
+
+  const handleApplyFilters = useCallback(async () => {
+    if (!selectedOrganizationId) {
+      return;
+    }
+
+    setIsFiltering(true);
+    setError("");
+
+    try {
+      const filters: {
+        category_id?: number;
+        status?: string;
+        is_assigned?: boolean;
+        device_number?: string;
+      } = {};
+
+      const catId = Number(filterValues.category_id);
+      if (filterValues.category_id && !Number.isNaN(catId)) {
+        filters.category_id = catId;
+      }
+
+      if (filterValues.status) {
+        filters.status = filterValues.status;
+      }
+
+      if (filterValues.is_assigned === "true") {
+        filters.is_assigned = true;
+      } else if (filterValues.is_assigned === "false") {
+        filters.is_assigned = false;
+      }
+
+      if (filterValues.device_number.trim()) {
+        filters.device_number = filterValues.device_number.trim();
+      }
+
+      const result = await devicesService.listDevicesByOrganizationWithFilters(
+        selectedOrganizationId,
+        filters,
+      );
+      setRows(result);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to filter devices",
+      );
+      setRows([]);
+    } finally {
+      setIsFiltering(false);
+    }
+  }, [selectedOrganizationId, filterValues]);
+
+  const handleClearFilters = useCallback(async () => {
+    setFilterValues(defaultFilterValues);
+    setIsFiltering(true);
+    setError("");
+
+    try {
+      const result = await loadDevices();
+      setRows(result);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to load devices",
+      );
+      setRows([]);
+    } finally {
+      setIsFiltering(false);
+    }
   }, [loadDevices]);
 
   const handleCreateDevice = async (
@@ -567,6 +691,11 @@ export function AllDevicesPageView() {
         setAssigningDevice(null);
       }
 
+      if (reallocatingDevice?.id === device.id) {
+        setReallocatingDevice(null);
+        setReallocateValues({ new_organization_id: "" });
+      }
+
       setDeleteSuccess("Device deleted successfully.");
     } catch (requestError) {
       setDeleteError(
@@ -576,6 +705,57 @@ export function AllDevicesPageView() {
       );
     } finally {
       setDeletingDeviceId("");
+    }
+  };
+
+  const handleStartReallocate = (device: DeviceRecord) => {
+    clearActionMessages();
+    setShowCreateForm(false);
+    setEditingDevice(null);
+    setAssigningDevice(null);
+    setReallocatingDevice(device);
+    setReallocateValues({ new_organization_id: "" });
+  };
+
+  const handleReallocateDevice = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+
+    if (!reallocatingDevice) {
+      return;
+    }
+
+    setReallocateError("");
+    setReallocateSuccess("");
+    setIsReallocating(true);
+
+    try {
+      if (!reallocateValues.new_organization_id.trim()) {
+        throw new Error("New organization is required.");
+      }
+
+      await devicesService.reallocateDevice(
+        reallocatingDevice.organizationId ?? "",
+        reallocatingDevice.deviceSerial,
+        reallocateValues.new_organization_id,
+      );
+
+      const refreshedRows = await loadDevices();
+      setRows(refreshedRows);
+      setReallocatingDevice(null);
+      setReallocateValues({ new_organization_id: "" });
+      setReallocateSuccess(
+        "Device reallocated to new organization successfully.",
+      );
+    } catch (requestError) {
+      setReallocateError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to reallocate device",
+      );
+    } finally {
+      setIsReallocating(false);
     }
   };
 
@@ -649,6 +829,158 @@ export function AllDevicesPageView() {
         </button>
       </div>
 
+      {/* Filter section */}
+      <div className="rounded-xl border border-[var(--color-shell-border)] bg-[var(--color-sand)]/5 p-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-[var(--color-ice)]">
+              Organization
+            </span>
+            <select
+              value={selectedOrganizationId}
+              onChange={(e) => setSelectedOrganizationId(e.target.value)}
+              className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm text-[var(--color-ice)] outline-none [&_option]:bg-slate-900 [&_option]:text-white"
+            >
+              <option value="">-- Select organization --</option>
+              {organizations.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-[var(--color-ice)]">
+              Category
+            </span>
+            <select
+              value={filterValues.category_id}
+              onChange={(e) =>
+                setFilterValues((prev) => ({
+                  ...prev,
+                  category_id: e.target.value,
+                }))
+              }
+              className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm text-[var(--color-ice)] outline-none [&_option]:bg-slate-900 [&_option]:text-white"
+            >
+              <option value="">All categories</option>
+              {categoryOptions.map((cat) => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-[var(--color-ice)]">
+              Status
+            </span>
+            <select
+              value={filterValues.status}
+              onChange={(e) =>
+                setFilterValues((prev) => ({
+                  ...prev,
+                  status: e.target.value,
+                }))
+              }
+              className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm text-[var(--color-ice)] outline-none [&_option]:bg-slate-900 [&_option]:text-white"
+            >
+              <option value="">All statuses</option>
+              {statusOptions.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-[var(--color-ice)]">
+              Assignment
+            </span>
+            <select
+              value={filterValues.is_assigned}
+              onChange={(e) =>
+                setFilterValues((prev) => ({
+                  ...prev,
+                  is_assigned: e.target.value,
+                }))
+              }
+              className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm text-[var(--color-ice)] outline-none [&_option]:bg-slate-900 [&_option]:text-white"
+            >
+              {isAssignedOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-[var(--color-ice)]">
+              Device number
+            </span>
+            <input
+              type="text"
+              value={filterValues.device_number}
+              onChange={(e) =>
+                setFilterValues((prev) => ({
+                  ...prev,
+                  device_number: e.target.value,
+                }))
+              }
+              placeholder="e.g. DEV-00001"
+              className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm text-[var(--color-ice)] outline-none placeholder:text-white/30"
+            />
+          </label>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleApplyFilters}
+              disabled={!selectedOrganizationId || isFiltering}
+              className="flex items-center gap-2 rounded-full border border-[var(--color-ice)]/30 bg-[var(--color-ice)]/10 px-5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-ice)]/20 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Apply filters"
+            >
+              {isFiltering ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4"
+                >
+                  <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+                </svg>
+              )}
+              <span>{isFiltering ? "Filtering..." : "Filter"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              disabled={isFiltering}
+              className="rounded-full border border-rose-400/30 px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-rose-300 transition-colors hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {!selectedOrganizationId ? (
+          <p className="mt-3 text-xs text-amber-300">
+            Select an organization before applying filters.
+          </p>
+        ) : null}
+      </div>
+
       {error ? <p className="text-sm text-rose-400">{error}</p> : null}
 
       {showCreateForm ? (
@@ -712,6 +1044,27 @@ export function AllDevicesPageView() {
         />
       ) : null}
 
+      {reallocatingDevice ? (
+        <EntityForm
+          title={`Reallocate device ${reallocatingDevice.deviceSerial} to new organization`}
+          fields={reallocateFormFields}
+          values={reallocateValues}
+          errorMessage={reallocateError}
+          submitLabel="Reallocate device"
+          submitLoadingLabel="Reallocating..."
+          isSubmitting={isReallocating}
+          onSubmit={handleReallocateDevice}
+          onChange={(name, value) =>
+            setReallocateValues((prev) => ({ ...prev, [name]: value }))
+          }
+          onCancel={() => {
+            setReallocatingDevice(null);
+            setReallocateValues({ new_organization_id: "" });
+            clearActionMessages();
+          }}
+        />
+      ) : null}
+
       {createSuccess ? (
         <p className="text-sm text-emerald-400">{createSuccess}</p>
       ) : null}
@@ -724,11 +1077,19 @@ export function AllDevicesPageView() {
       {assignSuccess ? (
         <p className="text-sm text-emerald-400">{assignSuccess}</p>
       ) : null}
+      {reallocateSuccess ? (
+        <p className="text-sm text-emerald-400">{reallocateSuccess}</p>
+      ) : null}
+      {reallocateError ? (
+        <p className="text-sm text-rose-400">{reallocateError}</p>
+      ) : null}
       {deleteError ? (
         <p className="text-sm text-rose-400">{deleteError}</p>
       ) : null}
 
-      {rows === null ? (
+      {isFiltering ? (
+        <ResourceFeedback state="loading" resourceName="devices" />
+      ) : rows === null ? (
         <ResourceFeedback state="loading" resourceName="devices" />
       ) : rows.length === 0 ? (
         <ResourceFeedback state="empty" resourceName="devices" />
@@ -774,6 +1135,18 @@ export function AllDevicesPageView() {
                   className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-ice)] transition-colors hover:bg-white/10"
                 >
                   Assign
+                </button>
+              ),
+            },
+            {
+              header: "Reallocate",
+              render: (row) => (
+                <button
+                  type="button"
+                  onClick={() => handleStartReallocate(row)}
+                  className="rounded-full border border-amber-400/30 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-200 transition-colors hover:bg-amber-400/10"
+                >
+                  Reallocate
                 </button>
               ),
             },

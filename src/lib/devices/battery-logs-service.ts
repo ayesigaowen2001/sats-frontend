@@ -9,7 +9,7 @@ interface ApiErrorPayload {
 
 interface BatteryLogApiModel {
   id: string;
-  device_id: string;
+  device_number: string;
   timestamp: string;
   battery_percentage?: number | string | null;
   battery_voltage?: number | string | null;
@@ -36,7 +36,7 @@ interface BatteryLogListApiResponse {
 
 export interface BatteryLogRecord {
   id: string;
-  deviceId: string;
+  deviceNumber: string;
   timestamp: string;
   batteryPercentage: string | null;
   batteryVoltage: string | null;
@@ -47,7 +47,8 @@ export interface BatteryLogRecord {
 }
 
 export interface BatteryLogFilters {
-  device_id?: string;
+  organization_id?: string;
+  device_number?: string;
   alert_only?: boolean;
   from_ts?: string;
   to_ts?: string;
@@ -88,7 +89,7 @@ function toDisplayValue(
 function mapBatteryLog(item: BatteryLogApiModel): BatteryLogRecord {
   return {
     id: item.id,
-    deviceId: item.device_id,
+    deviceNumber: item.device_number,
     timestamp: item.timestamp,
     batteryPercentage: toDisplayValue(item.battery_percentage),
     batteryVoltage: toDisplayValue(item.battery_voltage),
@@ -135,7 +136,7 @@ async function getApiErrorMessage(
 }
 
 export class BatteryLogsService {
-  private createHeaders() {
+  private createHeaders(organizationId?: string) {
     const headers = new Headers({
       Accept: "application/json",
     });
@@ -146,6 +147,10 @@ export class BatteryLogsService {
       headers.set("Authorization", `Bearer ${accessToken}`);
     }
 
+    if (organizationId) {
+      headers.set("organization_id", organizationId);
+    }
+
     return headers;
   }
 
@@ -154,8 +159,8 @@ export class BatteryLogsService {
   ): Promise<BatteryLogListResult> {
     const query = new URLSearchParams();
 
-    if (filters.device_id?.trim()) {
-      query.set("device_id", filters.device_id.trim());
+    if (filters.device_number?.trim()) {
+      query.set("device_number", filters.device_number.trim());
     }
 
     if (typeof filters.alert_only === "boolean") {
@@ -183,7 +188,7 @@ export class BatteryLogsService {
       `${appConfig.apiBaseUrl}/battery-logs?${query.toString()}`,
       {
         method: "GET",
-        headers: this.createHeaders(),
+        headers: this.createHeaders(filters.organization_id),
         cache: "no-store",
       },
     );

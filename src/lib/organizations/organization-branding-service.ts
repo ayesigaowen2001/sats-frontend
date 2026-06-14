@@ -5,14 +5,11 @@ interface OrganizationBrandingApiModel {
   id: string;
   organization_id?: string;
   org_id?: string;
-  primary_color: string;
-  secondary_color: string;
-  accent_color: string;
-  logo_url: string;
-  logo_url_64: string;
-  logo_url_128: string;
-  favicon_url: string;
-  font_family: string;
+  primary_color: string | null;
+  secondary_color: string | null;
+  accent_color: string | null;
+  logo_file: string | null;
+  font_family: string | null;
 }
 
 interface OrganizationBrandingApiResponse {
@@ -33,9 +30,6 @@ export interface OrganizationBranding {
   secondaryColor: string;
   accentColor: string;
   logoUrl: string;
-  logoUrl64: string;
-  logoUrl128: string;
-  faviconUrl: string;
   fontFamily: string;
 }
 
@@ -43,10 +37,6 @@ export interface OrganizationBrandingInput {
   primary_color: string;
   secondary_color: string;
   accent_color: string;
-  logo_url: string;
-  logo_url_64: string;
-  logo_url_128: string;
-  favicon_url: string;
   font_family: string;
 }
 
@@ -54,14 +44,11 @@ function mapBranding(item: OrganizationBrandingApiModel): OrganizationBranding {
   return {
     id: item.id,
     organizationId: item.organization_id ?? item.org_id ?? "",
-    primaryColor: item.primary_color,
-    secondaryColor: item.secondary_color,
-    accentColor: item.accent_color,
-    logoUrl: item.logo_url,
-    logoUrl64: item.logo_url_64,
-    logoUrl128: item.logo_url_128,
-    faviconUrl: item.favicon_url,
-    fontFamily: item.font_family,
+    primaryColor: item.primary_color ?? "",
+    secondaryColor: item.secondary_color ?? "",
+    accentColor: item.accent_color ?? "",
+    logoUrl: item.logo_file ?? "",
+    fontFamily: item.font_family ?? "",
   };
 }
 
@@ -161,8 +148,13 @@ export class OrganizationBrandingService {
       `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding`,
       {
         method: "POST",
-        headers: this.createHeaders(),
-        body: JSON.stringify(input),
+        headers: this.createHeaders(true),
+        body: JSON.stringify({
+          primary_color: input.primary_color,
+          secondary_color: input.secondary_color,
+          accent_color: input.accent_color,
+          font_family: input.font_family,
+        }),
       },
     );
 
@@ -184,8 +176,13 @@ export class OrganizationBrandingService {
       `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding`,
       {
         method: "PATCH",
-        headers: this.createHeaders(),
-        body: JSON.stringify(input),
+        headers: this.createHeaders(true),
+        body: JSON.stringify({
+          primary_color: input.primary_color,
+          secondary_color: input.secondary_color,
+          accent_color: input.accent_color,
+          font_family: input.font_family,
+        }),
       },
     );
 
@@ -207,8 +204,13 @@ export class OrganizationBrandingService {
       `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding`,
       {
         method: "PUT",
-        headers: this.createHeaders(),
-        body: JSON.stringify(input),
+        headers: this.createHeaders(true),
+        body: JSON.stringify({
+          primary_color: input.primary_color,
+          secondary_color: input.secondary_color,
+          accent_color: input.accent_color,
+          font_family: input.font_family,
+        }),
       },
     );
 
@@ -217,6 +219,87 @@ export class OrganizationBrandingService {
         await getApiErrorMessage(
           response,
           `Failed to upsert organization branding: ${response.status}`,
+        ),
+      );
+    }
+  }
+
+  async uploadLogo(orgId: string, file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append("logo", file);
+
+    const headers = new Headers({
+      Accept: "application/json",
+    });
+
+    const accessToken = getAccessToken();
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding/logo`,
+      {
+        method: "POST",
+        headers,
+        body: formData,
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        await getApiErrorMessage(
+          response,
+          `Failed to upload logo: ${response.status}`,
+        ),
+      );
+    }
+
+    const payload = (await response.json()) as { logo_file?: string };
+
+    return payload.logo_file ?? "";
+  }
+
+  async getLogoUrl(orgId: string): Promise<string> {
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding/logo`,
+      {
+        method: "GET",
+        headers: this.createHeaders(false),
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        await getApiErrorMessage(
+          response,
+          response.status === 404
+            ? "No logo is set for this organization."
+            : `Failed to load organization logo: ${response.status}`,
+        ),
+      );
+    }
+
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  }
+
+  async deleteLogo(orgId: string): Promise<void> {
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding/logo`,
+      {
+        method: "DELETE",
+        headers: this.createHeaders(false),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        await getApiErrorMessage(
+          response,
+          `Failed to delete organization logo: ${response.status}`,
         ),
       );
     }

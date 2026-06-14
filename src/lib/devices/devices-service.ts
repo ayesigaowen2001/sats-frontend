@@ -42,6 +42,7 @@ export interface OrganizationDeviceListFilters {
   category_id?: number;
   status?: string;
   is_assigned?: boolean;
+  device_number?: string;
   page?: number;
   per_page?: number;
 }
@@ -255,6 +256,30 @@ export class DevicesService {
     return this.listDevicesByOrganizationWithFilters(orgId, {});
   }
 
+  async reallocateDevice(
+    orgId: string,
+    deviceNumber: string,
+    newOrganizationId: string,
+  ): Promise<void> {
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/devices/${encodeURIComponent(deviceNumber)}/reallocate`,
+      {
+        method: "POST",
+        headers: this.createHeaders(),
+        body: JSON.stringify({ organization_id: newOrganizationId }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        await getApiErrorMessage(
+          response,
+          `Failed to reallocate device: ${response.status}`,
+        ),
+      );
+    }
+  }
+
   async listDevicesByOrganizationWithFilters(
     orgId: string,
     filters: OrganizationDeviceListFilters,
@@ -271,6 +296,10 @@ export class DevicesService {
 
     if (typeof filters.is_assigned === "boolean") {
       query.set("is_assigned", String(filters.is_assigned));
+    }
+
+    if (filters.device_number?.trim()) {
+      query.set("device_number", filters.device_number.trim());
     }
 
     if (typeof filters.page === "number" && filters.page > 0) {

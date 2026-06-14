@@ -17,11 +17,12 @@ import {
   animalsService,
   type Animal,
   type AnimalInput,
+  type AnimalListFilters,
+  type PaginationInfo,
 } from "@/lib/animals/animals-service";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
 
 interface AnimalFormValues extends Record<string, string> {
-  animal_number: string;
   classification_id: string;
   device_id: string;
   common_name: string;
@@ -39,7 +40,6 @@ interface OrganizationOption {
 }
 
 const defaultAnimalValues: AnimalFormValues = {
-  animal_number: "",
   classification_id: "",
   device_id: "",
   common_name: "",
@@ -51,6 +51,12 @@ const defaultAnimalValues: AnimalFormValues = {
   location_lng: "",
 };
 
+const genderFilterOptions = [
+  { value: "", label: "Any" },
+  { value: "Male", label: "Male" },
+  { value: "Female", label: "Female" },
+];
+
 const genderOptions = [
   { value: "Male", label: "Male" },
   { value: "Female", label: "Female" },
@@ -58,10 +64,6 @@ const genderOptions = [
 
 function toPayload(values: AnimalFormValues): AnimalInput {
   const classificationId = Number(values.classification_id);
-
-  if (!values.animal_number.trim()) {
-    throw new Error("Animal number is required.");
-  }
 
   if (!Number.isInteger(classificationId) || classificationId <= 0) {
     throw new Error("Classification is required.");
@@ -98,7 +100,6 @@ function toPayload(values: AnimalFormValues): AnimalInput {
   }
 
   return {
-    animal_number: values.animal_number.trim(),
     classification_id: classificationId,
     device_id: values.device_id.trim() || null,
     common_name: values.common_name.trim(),
@@ -115,7 +116,6 @@ function fromAnimal(animal: Animal): AnimalFormValues {
   const lng = animal.locationTagged?.[1];
 
   return {
-    animal_number: animal.animalNumber,
     classification_id: String(animal.classificationId),
     device_id: animal.deviceId ?? "",
     common_name: animal.commonName,
@@ -156,6 +156,16 @@ export function AllAnimalsPageView() {
   const [deleteError, setDeleteError] = useState("");
   const [deleteSuccess, setDeleteSuccess] = useState("");
 
+  // Filter state
+  const [filterAnimalNumber, setFilterAnimalNumber] = useState("");
+  const [filterClassificationId, setFilterClassificationId] = useState("");
+  const [filterGender, setFilterGender] = useState("");
+
+  // Pagination state
+  const [pagination, setPagination] = useState<PaginationInfo | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const perPage = 20;
+
   const classificationOptions = useMemo(
     () =>
       classifications.map((c) => ({
@@ -165,13 +175,13 @@ export function AllAnimalsPageView() {
     [classifications],
   );
 
+  const classificationFilterOptions = useMemo(
+    () => [{ value: "", label: "Any" }, ...classificationOptions],
+    [classificationOptions],
+  );
+
   const formFields = useMemo<EntityFormField<AnimalFormValues>[]>(
     () => [
-      {
-        name: "animal_number",
-        label: "Animal number",
-        required: true,
-      },
       {
         name: "common_name",
         label: "Common name",
@@ -235,13 +245,53 @@ export function AllAnimalsPageView() {
     setDeleteSuccess("");
   };
 
-  const loadAnimals = useCallback(async (orgId: string) => {
-    if (!orgId) {
-      setRows([]);
-      return [];
+  const buildFilters = useCallback((): AnimalListFilters => {
+    const filters: AnimalListFilters = {
+      page: currentPage,
+      per_page: perPage,
+    };
+
+    if (filterClassificationId.trim()) {
+      const id = Number(filterClassificationId);
+      if (Number.isInteger(id) && id > 0) {
+        filters.classification_id = id;
+      }
     }
 
-    return animalsService.listAnimals(orgId);
+    if (filterGender.trim()) {
+      filters.gender = filterGender.trim();
+    }
+
+    if (filterAnimalNumber.trim()) {
+      filters.animal_number = filterAnimalNumber.trim();
+    }
+
+    return filters;
+  }, [currentPage, filterClassificationId, filterGender, filterAnimalNumber]);
+
+  const loadAnimals = useCallback(
+    async (orgId: string) => {
+      if (!orgId) {
+        setRows([]);
+        setPagination(null);
+        return { items: [], pagination: null };
+      }
+
+      const filters = buildFilters();
+      const result = await animalsService.listAnimals(orgId, filters);
+      return result;
+    },
+    [buildFilters],
+  );
+
+  const handleFilterChange =
+    (setter: (value: string) => void) => (value: string) => {
+      setter(value);
+      setCurrentPage(1);
+    };
+
+  const goToPage = useCallback((page: number) => {
+    setCurrentPage(page);
   }, []);
 
   // Load organizations and classifications on mount
@@ -294,10 +344,11 @@ export function AllAnimalsPageView() {
     };
   }, []);
 
-  // Load animals when selected org changes
+  // Load animals when selected org or filters change
   useEffect(() => {
     if (!selectedOrgId) {
       setRows([]);
+      setPagination(null);
       return;
     }
 
@@ -308,14 +359,18 @@ export function AllAnimalsPageView() {
       setLoadError("");
 
       try {
-        const animals = await loadAnimals(selectedOrgId);
+        const result = await loadAnimals(selectedOrgId);
+        const items = result?.items ?? [];
+        const paginationInfo = result?.pagination ?? null;
 
         if (isMounted) {
-          setRows(animals);
+          setRows(items);
+          setPagination(paginationInfo);
         }
       } catch (err) {
         if (isMounted) {
           setRows([]);
+          setPagination(null);
           setLoadError(
             err instanceof Error ? err.message : "Failed to load animals",
           );
@@ -328,7 +383,7 @@ export function AllAnimalsPageView() {
     return () => {
       isMounted = false;
     };
-  }, [selectedOrgId, loadAnimals]);
+  }, [selectedOrgId, loadAnimals, currentPage]);
 
   const handleCreateAnimal = async (
     event: React.FormEvent<HTMLFormElement>,
@@ -342,8 +397,10 @@ export function AllAnimalsPageView() {
       const payload = toPayload(createValues);
       await animalsService.registerAnimal(selectedOrgId, payload);
       const refreshed = await loadAnimals(selectedOrgId);
-      setRows(refreshed);
+      setRows(refreshed.items ?? []);
+      setPagination(refreshed.pagination ?? null);
       setCreateValues(defaultAnimalValues);
+
       setCreateSuccess("Animal registered successfully.");
       setShowCreateForm(false);
     } catch (requestError) {
@@ -385,8 +442,10 @@ export function AllAnimalsPageView() {
         payload,
       );
       const refreshed = await loadAnimals(selectedOrgId);
-      setRows(refreshed);
+      setRows(refreshed.items ?? []);
+      setPagination(refreshed.pagination ?? null);
       setEditingAnimal(null);
+
       setUpdateSuccess("Animal updated successfully.");
     } catch (requestError) {
       setUpdateError(
@@ -417,7 +476,8 @@ export function AllAnimalsPageView() {
     try {
       await animalsService.deleteAnimal(selectedOrgId, animal.id);
       const refreshed = await loadAnimals(selectedOrgId);
-      setRows(refreshed);
+      setRows(refreshed.items ?? []);
+      setPagination(refreshed.pagination ?? null);
 
       if (editingAnimal?.id === animal.id) {
         setEditingAnimal(null);
@@ -481,8 +541,12 @@ export function AllAnimalsPageView() {
             setEditingAnimal(null);
             setShowCreateForm(false);
             clearActionMessages();
+            setFilterAnimalNumber("");
+            setFilterClassificationId("");
+            setFilterGender("");
+            setCurrentPage(1);
           }}
-          className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-[var(--color-ice)] focus:outline-none focus:ring-1 focus:ring-[var(--color-sand)]"
+          className="rounded-md border  px-3 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-[var(--color-sand)] [&_option]:bg-white [&_option]:text-black"
         >
           <option value="">— Select organization —</option>
           {organizations.map((org) => (
@@ -548,6 +612,68 @@ export function AllAnimalsPageView() {
         <p className="text-sm text-rose-400">{deleteError}</p>
       ) : null}
 
+      {selectedOrgId ? (
+        <div className="flex flex-wrap items-end gap-4 rounded-xl border border-[var(--color-shell-border)] bg-white/5 px-4 py-3">
+          {/* Animal number filter */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Animal number
+            </span>
+            <input
+              type="text"
+              value={filterAnimalNumber}
+              onChange={(event) =>
+                handleFilterChange(setFilterAnimalNumber)(event.target.value)
+              }
+              placeholder="Search animal number"
+              className="w-48 rounded-md border  px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none placeholder:text-[var(--color-mist)] focus:ring-1 focus:ring-[var(--color-sand)]"
+            />
+          </div>
+
+          {/* Classification filter */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Classification
+            </span>
+            <select
+              value={filterClassificationId}
+              onChange={(event) =>
+                handleFilterChange(setFilterClassificationId)(
+                  event.target.value,
+                )
+              }
+              className="rounded-md border  px-2.5 py-1.5 text-sm text-black outline-none focus:ring-1 focus:ring-[var(--color-sand)] [&_option]:bg-white [&_option]:text-black"
+            >
+              {classificationFilterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Gender filter */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Gender
+            </span>
+            <select
+              value={filterGender}
+              onChange={(event) =>
+                handleFilterChange(setFilterGender)(event.target.value)
+              }
+              className="rounded-md border   px-2.5 py-1.5 text-sm text-black outline-none focus:ring-1 focus:ring-[var(--color-sand)] [&_option]:bg-white [&_option]:text-black"
+            >
+              {genderFilterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      ) : null}
+
       {!selectedOrgId ? (
         <p className="text-sm text-[var(--color-mist)]">
           Select an organization to view its animals.
@@ -557,52 +683,79 @@ export function AllAnimalsPageView() {
       ) : rows.length === 0 ? (
         <ResourceFeedback state="empty" resourceName="animals" />
       ) : (
-        <DataTable
-          rows={rows}
-          horizontalScroll
-          columns={[
-            { header: "Animal #", render: (row) => row.animalNumber },
-            { header: "Common name", render: (row) => row.commonName },
-            {
-              header: "Classification",
-              render: (row) =>
-                classificationLabelById.get(row.classificationId) ??
-                String(row.classificationId),
-            },
-            { header: "Gender", render: (row) => row.gender },
-            { header: "Age", render: (row) => String(row.age) },
-            {
-              header: "Weight (kg)",
-              render: (row) => String(row.weightKg),
-            },
-            {
-              header: "Date tagged",
-              render: (row) =>
-                row.dateTagged ? row.dateTagged.split("T")[0] : "—",
-            },
-            {
-              header: "Device ID",
-              render: (row) =>
-                row.deviceId ? (
-                  <span className="font-mono text-xs">{row.deviceId}</span>
-                ) : (
-                  "—"
+        <>
+          <DataTable
+            rows={rows}
+            horizontalScroll
+            columns={[
+              { header: "Animal #", render: (row) => row.animalNumber },
+              { header: "Common name", render: (row) => row.commonName },
+              {
+                header: "Classification",
+                render: (row) =>
+                  classificationLabelById.get(row.classificationId) ??
+                  String(row.classificationId),
+              },
+              { header: "Gender", render: (row) => row.gender },
+              { header: "Age", render: (row) => String(row.age) },
+              {
+                header: "Weight (kg)",
+                render: (row) => String(row.weightKg),
+              },
+              {
+                header: "Date tagged",
+                render: (row) =>
+                  row.dateTagged ? row.dateTagged.split("T")[0] : "—",
+              },
+              {
+                header: "Device ID",
+                render: (row) =>
+                  row.deviceId ? (
+                    <span className="font-mono text-xs">{row.deviceId}</span>
+                  ) : (
+                    "—"
+                  ),
+              },
+              {
+                header: "Actions",
+                render: (row) => (
+                  <ResourceRowActions
+                    onEdit={() => handleStartEdit(row)}
+                    onDelete={() => {
+                      void handleDeleteAnimal(row);
+                    }}
+                    isDeleting={deletingAnimalId === row.id}
+                  />
                 ),
-            },
-            {
-              header: "Actions",
-              render: (row) => (
-                <ResourceRowActions
-                  onEdit={() => handleStartEdit(row)}
-                  onDelete={() => {
-                    void handleDeleteAnimal(row);
-                  }}
-                  isDeleting={deletingAnimalId === row.id}
-                />
-              ),
-            },
-          ]}
-        />
+              },
+            ]}
+          />
+
+          {/* Pagination */}
+          {pagination && pagination.pages > 1 ? (
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                disabled={!pagination.has_prev}
+                onClick={() => goToPage(pagination.page - 1)}
+                className="rounded-md border border-white/10 bg-white/5 px-3 py-1 text-sm text-[var(--color-ice)] transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-[var(--color-mist)]">
+                Page {pagination.page} of {pagination.pages}
+              </span>
+              <button
+                type="button"
+                disabled={!pagination.has_next}
+                onClick={() => goToPage(pagination.page + 1)}
+                className="rounded-md border border-white/10 bg-white/5 px-3 py-1 text-sm text-[var(--color-ice)] transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

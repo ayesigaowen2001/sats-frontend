@@ -9,8 +9,8 @@ interface ApiErrorPayload {
 
 interface HealthLogApiModel {
   id: string;
-  animal_id: string;
-  device_id: string;
+  animal_number: string;
+  device_number: string;
   timestamp: string;
   heart_rate_bpm?: number | string | null;
   body_temperature_c?: number | string | null;
@@ -38,8 +38,8 @@ interface HealthLogListApiResponse {
 
 export interface HealthLogRecord {
   id: string;
-  animalId: string;
-  deviceId: string;
+  animalNumber: string;
+  deviceNumber: string;
   timestamp: string;
   heartRateBpm: string | null;
   bodyTemperatureC: string | null;
@@ -51,7 +51,9 @@ export interface HealthLogRecord {
 }
 
 export interface HealthLogFilters {
-  animal_id?: string;
+  organization_id?: string;
+  animal_number?: string;
+  device_number?: string;
   from_ts?: string;
   to_ts?: string;
   page?: number;
@@ -91,8 +93,8 @@ function toDisplayValue(
 function mapHealthLog(item: HealthLogApiModel): HealthLogRecord {
   return {
     id: item.id,
-    animalId: item.animal_id,
-    deviceId: item.device_id,
+    animalNumber: item.animal_number,
+    deviceNumber: item.device_number,
     timestamp: item.timestamp,
     heartRateBpm: toDisplayValue(item.heart_rate_bpm),
     bodyTemperatureC: toDisplayValue(item.body_temperature_c),
@@ -140,7 +142,7 @@ async function getApiErrorMessage(
 }
 
 export class HealthLogsService {
-  private createHeaders() {
+  private createHeaders(organizationId?: string) {
     const headers = new Headers({
       Accept: "application/json",
     });
@@ -151,6 +153,10 @@ export class HealthLogsService {
       headers.set("Authorization", `Bearer ${accessToken}`);
     }
 
+    if (organizationId) {
+      headers.set("organization_id", organizationId);
+    }
+
     return headers;
   }
 
@@ -159,8 +165,12 @@ export class HealthLogsService {
   ): Promise<HealthLogListResult> {
     const query = new URLSearchParams();
 
-    if (filters.animal_id?.trim()) {
-      query.set("animal_id", filters.animal_id.trim());
+    if (filters.animal_number?.trim()) {
+      query.set("animal_number", filters.animal_number.trim());
+    }
+
+    if (filters.device_number?.trim()) {
+      query.set("device_number", filters.device_number.trim());
     }
 
     if (filters.from_ts?.trim()) {
@@ -184,7 +194,7 @@ export class HealthLogsService {
       `${appConfig.apiBaseUrl}/health-logs?${query.toString()}`,
       {
         method: "GET",
-        headers: this.createHeaders(),
+        headers: this.createHeaders(filters.organization_id),
         cache: "no-store",
       },
     );

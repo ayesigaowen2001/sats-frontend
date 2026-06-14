@@ -6,7 +6,7 @@ import { primaryNavigation } from "@/lib/navigation";
 
 const moduleIconMap: Record<string, string> = {
   tracking: "pi pi-map-marker",
-  animals: "pi pi-paw",
+  animals: "sats-buffalo-icon",
   health: "pi pi-heart",
   devices: "pi pi-mobile",
   video: "pi pi-video",
@@ -43,7 +43,13 @@ export function ModuleHubPage() {
             className="flex flex-col items-center justify-center gap-3 rounded-2xl px-4 py-6 text-center transition-colors hover:bg-[var(--color-shell-strong)]"
           >
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--color-shell-border)] bg-white/10 text-2xl text-[var(--color-ice)]">
-              <i className={moduleIconMap[module.key] ?? "pi pi-th-large"} />
+              {moduleIconMap[module.key] === "sats-buffalo-icon" ? (
+                <span aria-hidden="true" role="img">
+                  🦬
+                </span>
+              ) : (
+                <i className={moduleIconMap[module.key] ?? "pi pi-th-large"} />
+              )}
             </span>
             <span className="text-sm font-semibold text-[var(--color-ice)] sm:text-base">
               {module.label}

@@ -345,7 +345,7 @@ export const primaryNavigation: NavigationItem[] = [
   },
   {
     key: "organizations",
-    href: "/organizations",
+    href: "/organization/all-organizations",
     label: "Organizations",
     description: "Tenant registry, subscriptions, branding, and local nodes",
     group: "governance",

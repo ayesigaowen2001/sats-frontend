@@ -98,9 +98,16 @@ export abstract class HttpCrudRepository<
     });
 
     if (!response.ok) {
-      throw new Error(
-        `Request failed for ${path} with status ${response.status}`,
-      );
+      const errorMessage =
+        response.status === 403
+          ? `Access denied: You do not have permission to perform this action on ${this.resourcePath}. (403)`
+          : response.status === 401
+            ? `Authentication required: Please sign in again. (401)`
+            : response.status === 404
+              ? `Resource not found: The requested ${this.resourcePath} item does not exist. (404)`
+              : `Request failed for ${path} with status ${response.status}`;
+
+      throw new Error(errorMessage);
     }
 
     return response;

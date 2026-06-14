@@ -14,11 +14,13 @@ export interface EntityFormField<T extends StringFormValues<T>> {
     | "date"
     | "datetime-local"
     | "select"
-    | "color";
+    | "color"
+    | "file";
   required?: boolean;
   colSpan?: 1 | 2;
   options?: Array<{ value: string; label: string }>;
   readOnly?: boolean;
+  accept?: string;
 }
 
 interface EntityFormProps<T extends StringFormValues<T>> {
@@ -30,6 +32,7 @@ interface EntityFormProps<T extends StringFormValues<T>> {
   submitLoadingLabel: string;
   isSubmitting: boolean;
   onChange: (name: keyof T, value: string) => void;
+  onFileSelect?: (name: keyof T, file: File | null) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel?: () => void;
 }
@@ -43,6 +46,7 @@ export function EntityForm<T extends StringFormValues<T>>({
   submitLoadingLabel,
   isSubmitting,
   onChange,
+  onFileSelect,
   onSubmit,
   onCancel,
 }: EntityFormProps<T>) {
@@ -89,6 +93,17 @@ export function EntityForm<T extends StringFormValues<T>>({
                 </option>
               ))}
             </select>
+          ) : field.type === "file" ? (
+            <input
+              type="file"
+              accept={field.accept}
+              required={field.required}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                onFileSelect?.(field.name, file);
+              }}
+              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-[var(--color-ice)] outline-none file:mr-3 file:rounded-full file:border-0 file:bg-[var(--color-sand)]/18 file:px-3 file:py-1 file:text-xs file:font-semibold file:uppercase file:tracking-[0.12em] file:text-[var(--color-ice)] hover:file:bg-[var(--color-sand)]/28"
+            />
           ) : (
             <input
               type={field.type ?? "text"}

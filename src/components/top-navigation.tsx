@@ -12,6 +12,7 @@ import {
 } from "@/lib/navigation";
 import { getSessionData, type SessionData } from "@/lib/auth-tokens";
 import { canAccessPath } from "@/lib/rbac";
+import { PageErrorBoundary } from "@/components/page-error-boundary";
 import { useSatsStore } from "@/store/sats-store";
 
 interface TopNavigationProps {
@@ -249,7 +250,7 @@ export function TopNavigation({ children }: TopNavigationProps) {
                         <option
                           key={value}
                           value={value}
-                          className="text-black"
+                          className="bg-slate-900 text-white"
                         >
                           {label}
                         </option>
@@ -269,7 +270,7 @@ export function TopNavigation({ children }: TopNavigationProps) {
                         <option
                           key={organization.id}
                           value={organization.id}
-                          className="text-black"
+                          className="bg-slate-900 text-white"
                         >
                           {organization.name}
                         </option>
@@ -316,7 +317,7 @@ export function TopNavigation({ children }: TopNavigationProps) {
                   </span>
                 </div>
               </div>
-              {children}
+              <PageErrorBoundary>{children}</PageErrorBoundary>
             </div>
           </div>
         </div>

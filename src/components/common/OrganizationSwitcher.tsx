@@ -25,7 +25,7 @@ export function OrganizationSwitcher() {
           <option
             key={organization.id}
             value={organization.id}
-            className="text-black"
+            className="bg-slate-900 text-white"
           >
             {organization.name}
           </option>

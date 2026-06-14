@@ -27,9 +27,6 @@ interface BrandingFormValues extends Record<string, string> {
   secondary_color: string;
   accent_color: string;
   logo_url: string;
-  logo_url_64: string;
-  logo_url_128: string;
-  favicon_url: string;
   font_family: string;
 }
 
@@ -72,33 +69,12 @@ function ensureRequiredText(value: string, label: string) {
   return normalized;
 }
 
-function ensureHttpUrl(value: string, label: string) {
-  const normalized = ensureRequiredText(value, label);
-
-  let parsedUrl: URL;
-
-  try {
-    parsedUrl = new URL(normalized);
-  } catch {
-    throw new Error(`${label} must be a valid URL.`);
-  }
-
-  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-    throw new Error(`${label} must start with http:// or https://.`);
-  }
-
-  return normalized;
-}
-
 const defaultBrandingValues: BrandingFormValues = {
   organization_id: "",
   primary_color: "#1f2937",
   secondary_color: "#334155",
   accent_color: "#d97706",
   logo_url: "",
-  logo_url_64: "",
-  logo_url_128: "",
-  favicon_url: "",
   font_family: "Inter",
 };
 
@@ -114,6 +90,9 @@ export function OrganizationBrandingPageView() {
   const [actionSuccess, setActionSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLogoSubmitting, setIsLogoSubmitting] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
 
   const formFields = useMemo<EntityFormField<BrandingFormValues>[]>(
     () => [
@@ -156,15 +135,13 @@ export function OrganizationBrandingPageView() {
           label: font,
         })),
       },
-      { name: "logo_url", label: "Logo URL", required: true, colSpan: 2 },
-      { name: "logo_url_64", label: "Logo URL 64", required: true, colSpan: 2 },
       {
-        name: "logo_url_128",
-        label: "Logo URL 128",
-        required: true,
+        name: "logo_url",
+        label: "Logo",
+        type: "file",
+        accept: "image/png,image/jpeg,image/svg+xml,image/webp",
         colSpan: 2,
       },
-      { name: "favicon_url", label: "Favicon URL", required: true, colSpan: 2 },
     ],
     [organizations],
   );
@@ -178,9 +155,6 @@ export function OrganizationBrandingPageView() {
         secondary_color: normalizeColor(branding.secondaryColor, "#334155"),
         accent_color: normalizeColor(branding.accentColor, "#d97706"),
         logo_url: branding.logoUrl,
-        logo_url_64: branding.logoUrl64,
-        logo_url_128: branding.logoUrl128,
-        favicon_url: branding.faviconUrl,
         font_family:
           fontFamilyOptions.find((font) => font === branding.fontFamily) ??
           "Inter",
@@ -230,13 +204,56 @@ export function OrganizationBrandingPageView() {
     };
   }, [loadOrganizations]);
 
-  const buildPayload = () => {
-    const primaryLogoUrl = ensureHttpUrl(values.logo_url, "Logo URL");
+  // Auto-load branding when organization selection changes
+  useEffect(() => {
+    const orgId = values.organization_id;
 
-    const logoUrl64 = values.logo_url_64.trim() || primaryLogoUrl;
-    const logoUrl128 = values.logo_url_128.trim() || primaryLogoUrl;
-    const faviconUrl = values.favicon_url.trim() || primaryLogoUrl;
+    if (!orgId) {
+      return;
+    }
 
+    let cancelled = false;
+
+    const load = async () => {
+      setIsLoading(true);
+      setActionError("");
+      setActionSuccess("");
+
+      try {
+        const branding = await organizationBrandingService.getBranding(orgId);
+        if (!cancelled) {
+          setCurrentBranding(branding);
+          applyBrandingToForm(branding, orgId);
+          setActionSuccess("Organization branding loaded.");
+        }
+      } catch {
+        // Branding may not exist yet for a new org — that's okay
+        if (!cancelled) {
+          setCurrentBranding(null);
+          setValues((current) => ({
+            ...current,
+            primary_color: "#1f2937",
+            secondary_color: "#334155",
+            accent_color: "#d97706",
+            logo_url: "",
+            font_family: "Inter",
+          }));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [values.organization_id, applyBrandingToForm]);
+
+  const buildPayload = (): OrganizationBrandingInput => {
     const payload: OrganizationBrandingInput = {
       primary_color: ensureHexColor(values.primary_color, "Primary color"),
       secondary_color: ensureHexColor(
@@ -244,10 +261,6 @@ export function OrganizationBrandingPageView() {
         "Secondary color",
       ),
       accent_color: ensureHexColor(values.accent_color, "Accent color"),
-      logo_url: primaryLogoUrl,
-      logo_url_64: ensureHttpUrl(logoUrl64, "Logo URL 64"),
-      logo_url_128: ensureHttpUrl(logoUrl128, "Logo URL 128"),
-      favicon_url: ensureHttpUrl(faviconUrl, "Favicon URL"),
       font_family: ensureRequiredText(values.font_family, "Font family"),
     };
 
@@ -362,6 +375,110 @@ export function OrganizationBrandingPageView() {
     }
   };
 
+  const handleViewLogo = async () => {
+    const orgId = values.organization_id;
+
+    if (!orgId) {
+      setActionError("Please select an organization.");
+      return;
+    }
+
+    setActionError("");
+    setActionSuccess("");
+    setIsLogoSubmitting(true);
+
+    try {
+      // Revoke previous blob URL to avoid memory leaks
+      if (logoPreviewUrl) {
+        URL.revokeObjectURL(logoPreviewUrl);
+      }
+
+      const url = await organizationBrandingService.getLogoUrl(orgId);
+      setLogoPreviewUrl(url);
+      setActionSuccess("Logo preview loaded.");
+    } catch (requestError) {
+      setLogoPreviewUrl(null);
+      setActionError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to load organization logo",
+      );
+    } finally {
+      setIsLogoSubmitting(false);
+    }
+  };
+
+  const handleDeleteLogo = async () => {
+    const orgId = values.organization_id;
+
+    if (!orgId) {
+      setActionError("Please select an organization.");
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      "Delete organization logo? This will remove the uploaded logo from storage.",
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setActionError("");
+    setActionSuccess("");
+    setIsLogoSubmitting(true);
+
+    try {
+      await organizationBrandingService.deleteLogo(orgId);
+      setValues((current) => ({ ...current, logo_url: "" }));
+      setActionSuccess("Organization logo deleted successfully.");
+    } catch (requestError) {
+      setActionError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to delete organization logo",
+      );
+    } finally {
+      setIsLogoSubmitting(false);
+    }
+  };
+
+  const handleUploadLogo = async () => {
+    const orgId = values.organization_id;
+
+    if (!orgId) {
+      setActionError("Please select an organization.");
+      return;
+    }
+
+    if (!logoFile) {
+      setActionError("Please select a logo file to upload.");
+      return;
+    }
+
+    setActionError("");
+    setActionSuccess("");
+    setIsLogoSubmitting(true);
+
+    try {
+      const logoUrl = await organizationBrandingService.uploadLogo(
+        orgId,
+        logoFile,
+      );
+      setValues((current) => ({ ...current, logo_url: logoUrl }));
+      setLogoFile(null);
+      setActionSuccess("Organization logo uploaded successfully.");
+    } catch (requestError) {
+      setActionError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to upload organization logo",
+      );
+    } finally {
+      setIsLogoSubmitting(false);
+    }
+  };
+
   const handleDeleteBranding = async () => {
     const orgId = values.organization_id;
 
@@ -385,15 +502,13 @@ export function OrganizationBrandingPageView() {
     try {
       await organizationBrandingService.deleteBranding(orgId);
       setCurrentBranding(null);
+      setLogoFile(null);
       setValues((current) => ({
         ...current,
         primary_color: "#1f2937",
         secondary_color: "#334155",
         accent_color: "#d97706",
         logo_url: "",
-        logo_url_64: "",
-        logo_url_128: "",
-        favicon_url: "",
         font_family: "Inter",
       }));
       setActionSuccess("Organization branding deleted successfully.");
@@ -406,6 +521,44 @@ export function OrganizationBrandingPageView() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleChange = (name: keyof BrandingFormValues, value: string) => {
+    setValues((current) => {
+      if (name === "primary_color") {
+        return {
+          ...current,
+          primary_color: normalizeColor(value, current.primary_color),
+        };
+      }
+
+      if (name === "secondary_color") {
+        return {
+          ...current,
+          secondary_color: normalizeColor(value, current.secondary_color),
+        };
+      }
+
+      if (name === "accent_color") {
+        return {
+          ...current,
+          accent_color: normalizeColor(value, current.accent_color),
+        };
+      }
+
+      return { ...current, [name]: value };
+    });
+    setActionError("");
+    setActionSuccess("");
+  };
+
+  const handleFileSelect = (
+    name: keyof BrandingFormValues,
+    file: File | null,
+  ) => {
+    setLogoFile(file);
+    setActionError("");
+    setActionSuccess("");
   };
 
   if (error) {
@@ -472,38 +625,64 @@ export function OrganizationBrandingPageView() {
           submitLoadingLabel="Saving..."
           isSubmitting={isSubmitting}
           onSubmit={handleUpsertBranding}
-          onChange={(name, value) => {
-            setValues((current) => {
-              if (name === "primary_color") {
-                return {
-                  ...current,
-                  primary_color: normalizeColor(value, current.primary_color),
-                };
-              }
-
-              if (name === "secondary_color") {
-                return {
-                  ...current,
-                  secondary_color: normalizeColor(
-                    value,
-                    current.secondary_color,
-                  ),
-                };
-              }
-
-              if (name === "accent_color") {
-                return {
-                  ...current,
-                  accent_color: normalizeColor(value, current.accent_color),
-                };
-              }
-
-              return { ...current, [name]: value };
-            });
-            setActionError("");
-            setActionSuccess("");
-          }}
+          onChange={handleChange}
+          onFileSelect={handleFileSelect}
         />
+
+        <div className="rounded-2xl border border-[var(--color-shell-border)] p-4">
+          <h3 className="mb-3 text-base font-semibold text-[var(--color-ice)]">
+            Logo management
+          </h3>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                void handleUploadLogo();
+              }}
+              disabled={
+                isLogoSubmitting ||
+                isSubmitting ||
+                !logoFile ||
+                !values.organization_id
+              }
+              className="rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/28 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isLogoSubmitting ? "Uploading..." : "Upload logo"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void handleViewLogo();
+              }}
+              disabled={
+                isLogoSubmitting || isSubmitting || !values.organization_id
+              }
+              className="rounded-full border border-white/20 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isLogoSubmitting ? "Loading..." : "View logo"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void handleDeleteLogo();
+              }}
+              disabled={isLogoSubmitting || isSubmitting || !values.logo_url}
+              className="rounded-full border border-rose-300/40 bg-rose-500/18 px-5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-rose-100 transition-colors hover:bg-rose-500/28 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isLogoSubmitting ? "Deleting..." : "Delete logo"}
+            </button>
+          </div>
+          {logoPreviewUrl ? (
+            <div className="mt-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={logoPreviewUrl}
+                alt="Organization logo preview"
+                className="max-h-48 max-w-xs rounded-lg border border-[var(--color-shell-border)] object-contain"
+              />
+            </div>
+          ) : null}
+        </div>
 
         {actionSuccess ? (
           <p className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
@@ -563,10 +742,6 @@ export function OrganizationBrandingPageView() {
               {
                 header: "Logo",
                 render: (row) => row.logoUrl,
-              },
-              {
-                header: "Favicon",
-                render: (row) => row.faviconUrl,
               },
               {
                 header: "Actions",

@@ -16,7 +16,7 @@ import {
 interface TrackingFilterValues {
   organization_id: string;
   animal_id: string;
-  device_id: string;
+  device_number: string;
   from_ts: string;
   to_ts: string;
   page: string;
@@ -62,7 +62,7 @@ type MapViewMode = "streets" | "satellite";
 const defaultFilters: TrackingFilterValues = {
   organization_id: "",
   animal_id: "",
-  device_id: "",
+  device_number: "",
   from_ts: "",
   to_ts: "",
   page: "1",
@@ -143,7 +143,7 @@ function normalizeFilterValues(
   return {
     organization_id: values.organization_id.trim(),
     animal_id: values.animal_id.trim(),
-    device_id: values.device_id.trim(),
+    device_number: values.device_number.trim(),
     from_ts: values.from_ts,
     to_ts: values.to_ts,
     page: String(Math.max(1, Number(values.page) || 1)),
@@ -255,9 +255,9 @@ export function TrackingLiveMapPageView() {
   const isMovementMode = useMemo(
     () =>
       Boolean(
-        appliedFilters.animal_id.trim() || appliedFilters.device_id.trim(),
+        appliedFilters.animal_id.trim() || appliedFilters.device_number.trim(),
       ),
-    [appliedFilters.animal_id, appliedFilters.device_id],
+    [appliedFilters.animal_id, appliedFilters.device_number],
   );
 
   const mapRows = useMemo(() => {
@@ -355,7 +355,7 @@ export function TrackingLiveMapPageView() {
     try {
       const response = await trackingLogsService.listTrackingLogs({
         animal_id: appliedFilters.animal_id,
-        device_id: appliedFilters.device_id,
+        device_number: appliedFilters.device_number,
         from_ts: toIsoTimestamp(appliedFilters.from_ts),
         to_ts: toIsoTimestamp(appliedFilters.to_ts),
         page: Number(appliedFilters.page),
@@ -385,7 +385,8 @@ export function TrackingLiveMapPageView() {
             ),
           ]);
 
-          animalOptions = animals
+          const animalListResponse = animals;
+          animalOptions = (animalListResponse.items ?? [])
             .map((animal) => ({
               id: animal.id,
               animalNumber: animal.animalNumber,
@@ -536,8 +537,9 @@ export function TrackingLiveMapPageView() {
           return;
         }
 
+        const animalEntitiesResponse = animals;
         setOrganizationAnimalOptions(
-          animals
+          (animalEntitiesResponse.items ?? [])
             .map((animal) => ({
               id: animal.id,
               animalNumber: animal.animalNumber,
@@ -548,6 +550,7 @@ export function TrackingLiveMapPageView() {
             }))
             .sort((a, b) => a.animalNumber.localeCompare(b.animalNumber)),
         );
+
         setOrganizationDeviceOptions(
           devices
             .map((device) => ({
@@ -649,6 +652,16 @@ export function TrackingLiveMapPageView() {
 
     activeMapStyleRef.current = mapViewMode;
     map.once("style.load", () => {
+      // Use nearest-neighbour resampling for raster tiles so satellite imagery
+      // stays sharp instead of blurring when zoomed out to lower zoom levels.
+      const style = map.getStyle();
+      if (style && style.layers) {
+        style.layers.forEach((layer: any) => {
+          if (layer.type === "raster") {
+            map.setPaintProperty(layer.id, "raster-resampling", "nearest");
+          }
+        });
+      }
       setMapStyleReadyTick((current) => current + 1);
     });
     map.setStyle(nextStyle);
@@ -842,21 +855,21 @@ export function TrackingLiveMapPageView() {
                     ...current,
                     organization_id: selectedOrganizationId,
                     animal_id: "",
-                    device_id: "",
+                    device_number: "",
                     page: "1",
                   }));
                   setDeviceSearch("");
                 }}
                 className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none"
               >
-                <option value="" className="text-black">
+                <option value="" className="bg-slate-900 text-white">
                   Select organization
                 </option>
                 {organizationOptions.map((option) => (
                   <option
                     key={option.id}
                     value={option.id}
-                    className="text-black"
+                    className="bg-slate-900 text-white"
                   >
                     {option.name}
                   </option>
@@ -880,14 +893,14 @@ export function TrackingLiveMapPageView() {
                 }}
                 className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none disabled:opacity-60"
               >
-                <option value="" className="text-black">
+                <option value="" className="bg-slate-900 text-white">
                   Select animal
                 </option>
                 {organizationAnimalOptions.map((animal) => (
                   <option
                     key={animal.id}
                     value={animal.animalNumber}
-                    className="text-black"
+                    className="bg-slate-900 text-white"
                   >
                     {animal.animalNumber} - {animal.commonName}
                   </option>
@@ -897,7 +910,7 @@ export function TrackingLiveMapPageView() {
 
             <label className="flex-1 min-w-[10rem] max-w-[14rem]">
               <span className="text-xs font-medium text-[var(--color-ice)]">
-                Device ID
+                Device number
               </span>
               <input
                 list="tracking-device-options"
@@ -916,11 +929,11 @@ export function TrackingLiveMapPageView() {
                   setDeviceSearch(nextValue);
                   setFilters((current) => ({
                     ...current,
-                    device_id: matched?.deviceSerial ?? "",
+                    device_number: matched?.deviceSerial ?? nextValue,
                     page: "1",
                   }));
                 }}
-                placeholder="Search device"
+                placeholder="Search device number"
                 className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none disabled:opacity-60"
               />
               <datalist id="tracking-device-options">

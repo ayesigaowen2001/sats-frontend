@@ -37,7 +37,6 @@ export interface Animal {
 }
 
 export interface AnimalInput {
-  animal_number: string;
   classification_id: number;
   device_id?: string | null;
   common_name: string;
@@ -51,8 +50,25 @@ export interface AnimalInput {
 export interface AnimalListFilters {
   classification_id?: number;
   gender?: string;
+  animal_number?: string;
   page?: number;
   per_page?: number;
+}
+
+export interface PaginationInfo {
+  total: number;
+  pages: number;
+  page: number;
+  per_page: number;
+  has_next: boolean;
+  has_prev: boolean;
+  next_page: number | null;
+  prev_page: number | null;
+}
+
+export interface AnimalListResponse {
+  items: Animal[];
+  pagination: PaginationInfo;
 }
 
 function mapAnimal(item: AnimalApiModel): Animal {
@@ -82,6 +98,28 @@ function extractList<T>(payload: unknown): T[] {
   }
 
   return [];
+}
+
+function extractPagination(payload: unknown): PaginationInfo | null {
+  if (payload && typeof payload === "object" && "pagination" in payload) {
+    const pagination = (payload as { pagination: unknown }).pagination;
+    if (pagination && typeof pagination === "object") {
+      const p = pagination as Record<string, unknown>;
+      if (typeof p.total === "number" && typeof p.pages === "number") {
+        return {
+          total: p.total as number,
+          pages: p.pages as number,
+          page: (p.page as number) ?? 1,
+          per_page: (p.per_page as number) ?? 20,
+          has_next: p.has_next === true,
+          has_prev: p.has_prev === true,
+          next_page: (p.next_page as number | null) ?? null,
+          prev_page: (p.prev_page as number | null) ?? null,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 async function getApiErrorMessage(
@@ -141,7 +179,7 @@ export class AnimalsService {
   async listAnimals(
     orgId: string,
     filters: AnimalListFilters = {},
-  ): Promise<Animal[]> {
+  ): Promise<AnimalListResponse> {
     const query = new URLSearchParams();
 
     if (typeof filters.classification_id === "number") {
@@ -150,6 +188,10 @@ export class AnimalsService {
 
     if (filters.gender?.trim()) {
       query.set("gender", filters.gender.trim());
+    }
+
+    if (filters.animal_number?.trim()) {
+      query.set("animal_number", filters.animal_number.trim());
     }
 
     if (typeof filters.page === "number" && filters.page > 0) {
@@ -180,7 +222,21 @@ export class AnimalsService {
     }
 
     const payload = (await response.json()) as unknown;
-    return extractList<AnimalApiModel>(payload).map(mapAnimal);
+    const items = extractList<AnimalApiModel>(payload).map(mapAnimal);
+    const pagination = extractPagination(payload);
+    return {
+      items,
+      pagination: pagination ?? {
+        total: items.length,
+        pages: 1,
+        page: 1,
+        per_page: items.length || 20,
+        has_next: false,
+        has_prev: false,
+        next_page: null,
+        prev_page: null,
+      },
+    };
   }
 
   async getAnimalById(orgId: string, animalId: string): Promise<Animal> {

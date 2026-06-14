@@ -204,11 +204,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         href: "/users/activity-log",
         description: "Audit recent user actions and sign-ins.",
       },
-      {
-        label: "Invite New User",
-        href: "/users/invite",
-        description: "Send account invitations and onboarding access.",
-      },
     ],
   },
   {
@@ -237,20 +232,11 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         description: "Review every animal record and assignment.",
       },
       {
-        label: "Animal Map View",
-        href: "/animal/map",
-        description: "Explore animal positions and protected areas.",
-      },
-      {
         label: "Classifications / Taxonomy",
         href: "/animal/classifications",
         description: "Manage species and hierarchy definitions.",
       },
-      {
-        label: "Add New Animal",
-        href: "/animal/create",
-        description: "Register a new tracked animal.",
-      },
+
       {
         label: "Tagging Records",
         href: "/animal/tagging-records",
@@ -278,11 +264,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     accent: "from-[#db806c]/25 via-[#21344b] to-[#081923]",
     showInHub: true,
     items: [
-      {
-        label: "Dashboard",
-        href: "/health",
-        description: "Health overview and risk posture.",
-      },
       {
         label: "Live Health Monitoring",
         href: "/health/live",
@@ -368,11 +349,6 @@ export const dashboardModules: DashboardModuleDefinition[] = [
     showInHub: true,
     items: [
       {
-        label: "Dashboard",
-        href: "/video",
-        description: "Video command overview and stream health.",
-      },
-      {
         label: "Live Stream",
         href: "/video/live",
         description: "Stream active camera feeds and tune live view settings.",
@@ -392,11 +368,7 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         href: "/video/activity-detections",
         description: "Review automated detections and flagged events.",
       },
-      {
-        label: "Video Settings",
-        href: "/video/settings",
-        description: "Manage retention and stream behavior.",
-      },
+
       {
         label: "Camera Management",
         href: "/video/cameras",

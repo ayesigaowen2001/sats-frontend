@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
+import { ForbiddenView } from "@/components/forbidden-view";
+import { PageErrorBoundary } from "@/components/page-error-boundary";
 import { ResourceFeedback } from "@/components/resource-feedback";
 import {
   getDashboardModule,
@@ -132,10 +134,15 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
     )
   ) {
     return (
-      <ResourceFeedback
-        title="Access denied"
-        detail="Your account does not have permission to open this workspace."
-      />
+      <div className="flex min-h-screen bg-[var(--color-night)] text-[var(--color-ice)]">
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+          <Topbar
+            showSidebarToggle={false}
+            onSidebarOpen={() => setIsSidebarOpen(true)}
+          />
+          <ForbiddenView />
+        </div>
+      </div>
     );
   }
 
@@ -153,7 +160,7 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
           onSidebarOpen={() => setIsSidebarOpen(true)}
         />
         <main className="min-w-0 flex-1 overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
-          {children}
+          <PageErrorBoundary>{children}</PageErrorBoundary>
         </main>
       </div>
     </div>

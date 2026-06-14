@@ -59,6 +59,7 @@ export interface TrackingLogRecord {
 export interface TrackingLogFilters {
   animal_id?: string;
   device_id?: string;
+  device_number?: string;
   from_ts?: string;
   to_ts?: string;
   page?: number;
@@ -213,6 +214,10 @@ export class TrackingLogsService {
       } else {
         query.set("device_number", deviceFilter);
       }
+    }
+
+    if (filters.device_number?.trim()) {
+      query.set("device_number", filters.device_number.trim());
     }
 
     if (filters.from_ts?.trim()) {

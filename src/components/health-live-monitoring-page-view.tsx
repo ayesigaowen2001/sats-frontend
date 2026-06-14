@@ -9,9 +9,17 @@ import {
   type HealthLogFilters,
   type HealthLogRecord,
 } from "@/lib/health/health-logs-service";
+import { organizationCrudService } from "@/lib/organizations/organization-crud";
+
+interface OrganizationOption {
+  id: string;
+  name: string;
+}
 
 interface HealthLogsFilterValues {
-  animal_id: string;
+  organization_id: string;
+  animal_number: string;
+  device_number: string;
   from_ts: string;
   to_ts: string;
   page: string;
@@ -29,7 +37,9 @@ interface HealthLogPagination {
 }
 
 const defaultFilters: HealthLogsFilterValues = {
-  animal_id: "",
+  organization_id: "",
+  animal_number: "",
+  device_number: "",
   from_ts: "",
   to_ts: "",
   page: "1",
@@ -69,7 +79,9 @@ function normalizeFilterValues(
   values: HealthLogsFilterValues,
 ): HealthLogsFilterValues {
   return {
-    animal_id: values.animal_id.trim(),
+    organization_id: values.organization_id.trim(),
+    animal_number: values.animal_number.trim(),
+    device_number: values.device_number.trim(),
     from_ts: values.from_ts,
     to_ts: values.to_ts,
     page: String(Math.max(1, Number(values.page) || 1)),
@@ -86,6 +98,8 @@ function numericDisplay(value: string | null) {
 }
 
 export function HealthLiveMonitoringPageView(): React.JSX.Element {
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
+
   const [filters, setFilters] =
     useState<HealthLogsFilterValues>(defaultFilters);
   const [appliedFilters, setAppliedFilters] =
@@ -99,12 +113,43 @@ export function HealthLiveMonitoringPageView(): React.JSX.Element {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const load = async () => {
+      const result = await organizationCrudService.listOrganizations();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (result && Array.isArray(result)) {
+        setOrganizations(
+          result.map((org) => ({
+            id: org.id,
+            name: org.organization_name,
+          })),
+        );
+      } else {
+        setOrganizations([]);
+      }
+    };
+
+    void load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const loadHealthLogs = useCallback(async () => {
     setIsLoading(true);
     setError("");
 
     const requestFilters: HealthLogFilters = {
-      animal_id: appliedFilters.animal_id,
+      organization_id: appliedFilters.organization_id || undefined,
+      animal_number: appliedFilters.animal_number || undefined,
+      device_number: appliedFilters.device_number || undefined,
       from_ts: toIsoTimestamp(appliedFilters.from_ts),
       to_ts: toIsoTimestamp(appliedFilters.to_ts),
       page: Number(appliedFilters.page),
@@ -176,19 +221,37 @@ export function HealthLiveMonitoringPageView(): React.JSX.Element {
         >
           <label className="flex-1 min-w-[14rem] max-w-[20rem]">
             <span className="text-xs font-medium text-[var(--color-ice)]">
-              Animal ID
+              Animal number
             </span>
             <input
-              value={filters.animal_id}
+              value={filters.animal_number}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
-                  animal_id: event.target.value,
+                  animal_number: event.target.value,
                   page: "1",
                 }))
               }
-              placeholder="UUID"
-              className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none"
+              placeholder="e.g. ANM-00001"
+              className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none placeholder:text-white/30"
+            />
+          </label>
+
+          <label className="flex-1 min-w-[14rem] max-w-[20rem]">
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Device number
+            </span>
+            <input
+              value={filters.device_number}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  device_number: event.target.value,
+                  page: "1",
+                }))
+              }
+              placeholder="e.g. DEV-00001"
+              className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none placeholder:text-white/30"
             />
           </label>
 
@@ -275,8 +338,8 @@ export function HealthLiveMonitoringPageView(): React.JSX.Element {
               header: "Timestamp",
               render: (row) => formatDateTime(row.timestamp),
             },
-            { header: "Animal", render: (row) => row.animalId },
-            { header: "Device", render: (row) => row.deviceId },
+            { header: "Animal", render: (row) => row.animalNumber },
+            { header: "Device", render: (row) => row.deviceNumber },
             {
               header: "Heart rate (bpm)",
               render: (row) => numericDisplay(row.heartRateBpm),

@@ -9,9 +9,16 @@ import {
   type BatteryLogFilters,
   type BatteryLogRecord,
 } from "@/lib/devices/battery-logs-service";
+import { organizationCrudService } from "@/lib/organizations/organization-crud";
+
+interface OrganizationOption {
+  id: string;
+  name: string;
+}
 
 interface BatteryLogsFilterValues {
-  device_id: string;
+  organization_id: string;
+  device_number: string;
   alert_only: boolean;
   from_ts: string;
   to_ts: string;
@@ -30,7 +37,8 @@ interface BatteryLogPagination {
 }
 
 const defaultFilters: BatteryLogsFilterValues = {
-  device_id: "",
+  organization_id: "",
+  device_number: "",
   alert_only: false,
   from_ts: "",
   to_ts: "",
@@ -71,7 +79,8 @@ function normalizeFilterValues(
   values: BatteryLogsFilterValues,
 ): BatteryLogsFilterValues {
   return {
-    device_id: values.device_id.trim(),
+    organization_id: values.organization_id.trim(),
+    device_number: values.device_number.trim(),
     alert_only: values.alert_only,
     from_ts: values.from_ts,
     to_ts: values.to_ts,
@@ -89,6 +98,8 @@ function numericDisplay(value: string | null) {
 }
 
 export function DeviceBatteryLogsPageView(): React.JSX.Element {
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
+
   const [filters, setFilters] =
     useState<BatteryLogsFilterValues>(defaultFilters);
   const [appliedFilters, setAppliedFilters] =
@@ -102,12 +113,43 @@ export function DeviceBatteryLogsPageView(): React.JSX.Element {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const load = async () => {
+      const result = await organizationCrudService.listOrganizations();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (result && Array.isArray(result)) {
+        setOrganizations(
+          result.map((org) => ({
+            id: org.id,
+            name: org.organization_name,
+          })),
+        );
+      } else {
+        setOrganizations([]);
+        setError("Failed to load organizations.");
+      }
+    };
+
+    void load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const loadBatteryLogs = useCallback(async () => {
     setIsLoading(true);
     setError("");
 
     const requestFilters: BatteryLogFilters = {
-      device_id: appliedFilters.device_id,
+      organization_id: appliedFilters.organization_id || undefined,
+      device_number: appliedFilters.device_number || undefined,
       alert_only: appliedFilters.alert_only,
       from_ts: toIsoTimestamp(appliedFilters.from_ts),
       to_ts: toIsoTimestamp(appliedFilters.to_ts),
@@ -180,19 +222,43 @@ export function DeviceBatteryLogsPageView(): React.JSX.Element {
         >
           <label className="flex-1 min-w-[14rem] max-w-[20rem]">
             <span className="text-xs font-medium text-[var(--color-ice)]">
-              Device ID
+              Organization
             </span>
-            <input
-              value={filters.device_id}
+            <select
+              value={filters.organization_id}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
-                  device_id: event.target.value,
+                  organization_id: event.target.value,
                   page: "1",
                 }))
               }
-              placeholder="UUID"
-              className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none"
+              className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none [&_option]:bg-slate-900 [&_option]:text-white"
+            >
+              <option value="">-- All organizations --</option>
+              {organizations.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex-1 min-w-[14rem] max-w-[20rem]">
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Device number
+            </span>
+            <input
+              value={filters.device_number}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  device_number: event.target.value,
+                  page: "1",
+                }))
+              }
+              placeholder="e.g. DEV-00001"
+              className="mt-1 w-full rounded-lg border border-[var(--color-shell-border)] bg-transparent px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none placeholder:text-white/30"
             />
           </label>
 
@@ -297,7 +363,7 @@ export function DeviceBatteryLogsPageView(): React.JSX.Element {
               header: "Timestamp",
               render: (row) => formatDateTime(row.timestamp),
             },
-            { header: "Device", render: (row) => row.deviceId },
+            { header: "Device", render: (row) => row.deviceNumber },
             {
               header: "Battery %",
               render: (row) => numericDisplay(row.batteryPercentage),
