@@ -6,6 +6,8 @@ import {
   EntityForm,
   type EntityFormField,
 } from "@/components/common/entity-form";
+import { useUIStore, type ThemeMode } from "@/store/useUIStore";
+import { cn } from "@/lib/utils";
 import { ResourceRowActions } from "@/components/common/resource-row-actions";
 import { DataTable } from "@/components/data-table";
 import { ResourceFeedback } from "@/components/resource-feedback";
@@ -93,6 +95,9 @@ export function OrganizationBrandingPageView() {
   const [isLogoSubmitting, setIsLogoSubmitting] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+
+  const themeMode = useUIStore((state) => state.themeMode);
+  const setThemeMode = useUIStore((state) => state.setThemeMode);
 
   const formFields = useMemo<EntityFormField<BrandingFormValues>[]>(
     () => [
@@ -682,6 +687,39 @@ export function OrganizationBrandingPageView() {
               />
             </div>
           ) : null}
+        </div>
+
+        {/* ── Theme mode switcher ── */}
+        <div className="rounded-2xl border border-[var(--color-shell-border)] p-4">
+          <h3 className="mb-3 text-base font-semibold text-[var(--color-ice)]">
+            Application theme
+          </h3>
+          <p className="mb-4 text-sm text-[var(--color-mist)]">
+            Choose how the dashboard should render. <strong>System</strong>{" "}
+            applies the organization branding colors fetched from the API.{" "}
+            <strong>Light</strong> and <strong>Dark</strong> use fixed global
+            palettes.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {(["system", "light", "dark"] as ThemeMode[]).map((mode) => {
+              const isActive = themeMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setThemeMode(mode)}
+                  className={cn(
+                    "rounded-full border px-5 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors",
+                    isActive
+                      ? "border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 text-[var(--color-ice)]"
+                      : "border-white/20 text-[var(--color-mist)] hover:border-white/40 hover:text-[var(--color-ice)]",
+                  )}
+                >
+                  {mode === "system" ? "System (branding)" : mode}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {actionSuccess ? (

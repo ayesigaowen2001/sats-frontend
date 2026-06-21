@@ -1,3 +1,5 @@
+"use client";
+
 import {
   liveAlerts,
   modules,
@@ -12,6 +14,7 @@ import { ModuleCard } from "@/components/module-card";
 import { SchemaTable } from "@/components/schema-table";
 import { SectionHeading } from "@/components/section-heading";
 import { WorkflowStrip } from "@/components/workflow-strip";
+import { OrganizationLogo } from "@/components/common/OrganizationLogo";
 
 const quickStats = [
   "IoT telemetry ingestion",
@@ -23,7 +26,11 @@ const quickStats = [
 export function DashboardShell() {
   return (
     <main className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-10 px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
-      <section className="overflow-hidden rounded-[2.5rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(229,184,117,0.28),transparent_30%),linear-gradient(135deg,rgba(6,31,44,0.96),rgba(4,18,28,0.98))] p-7 shadow-[0_32px_120px_rgba(0,0,0,0.35)] sm:p-10">
+      <section className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(229,184,117,0.28),transparent_30%),linear-gradient(135deg,rgba(6,31,44,0.96),rgba(4,18,28,0.98))] p-7 shadow-[0_32px_120px_rgba(0,0,0,0.35)] sm:p-10">
+        {/* Logo watermark in the hero section */}
+        <div className="pointer-events-none absolute right-0 top-0 flex h-full w-1/3 items-center justify-center opacity-[0.04]">
+          <OrganizationLogo maxHeight={240} className="max-h-60 w-auto" />
+        </div>
         <div className="grid gap-8 xl:grid-cols-[1.2fr_0.8fr] xl:items-end">
           <div className="space-y-6">
             <div className="inline-flex rounded-full border border-white/10 bg-white/8 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-[var(--color-sand)]">

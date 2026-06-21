@@ -109,13 +109,19 @@ export class OrganizationBrandingService {
   }
 
   async getBranding(orgId: string): Promise<OrganizationBranding> {
-    const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding`,
-      {
-        method: "GET",
-        headers: this.createHeaders(),
-        cache: "no-store",
-      },
+    const url = `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding`;
+    console.log("[BrandingService] Fetching branding from:", url);
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: this.createHeaders(),
+      cache: "no-store",
+    });
+
+    console.log(
+      "[BrandingService] Branding response status:",
+      response.status,
+      response.statusText,
     );
 
     if (!response.ok) {
@@ -137,7 +143,15 @@ export class OrganizationBrandingService {
       throw new Error("Branding response was empty.");
     }
 
-    return mapBranding(item);
+    const mapped = mapBranding(item);
+    console.log("[BrandingService] Branding data mapped:", {
+      id: mapped.id,
+      organizationId: mapped.organizationId,
+      logoUrl: mapped.logoUrl,
+      hasPrimary: !!mapped.primaryColor,
+    });
+
+    return mapped;
   }
 
   async createBranding(
@@ -262,16 +276,24 @@ export class OrganizationBrandingService {
   }
 
   async getLogoUrl(orgId: string): Promise<string> {
-    const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding/logo`,
-      {
-        method: "GET",
-        headers: this.createHeaders(false),
-        cache: "no-store",
-      },
+    const url = `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/branding/logo`;
+    console.log("[BrandingService] Fetching logo from:", url);
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: this.createHeaders(false),
+      cache: "no-store",
+    });
+
+    console.log(
+      "[BrandingService] Logo response status:",
+      response.status,
+      response.statusText,
     );
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.log("[BrandingService] Logo fetch failed, body:", errorText);
       throw new Error(
         await getApiErrorMessage(
           response,
@@ -282,8 +304,21 @@ export class OrganizationBrandingService {
       );
     }
 
+    const contentType = response.headers.get("content-type");
+    console.log("[BrandingService] Logo response content-type:", contentType);
+
     const blob = await response.blob();
-    return URL.createObjectURL(blob);
+    console.log(
+      "[BrandingService] Logo blob size:",
+      blob.size,
+      "type:",
+      blob.type,
+    );
+
+    const blobUrl = URL.createObjectURL(blob);
+    console.log("[BrandingService] Created blob URL:", blobUrl);
+
+    return blobUrl;
   }
 
   async deleteLogo(orgId: string): Promise<void> {
