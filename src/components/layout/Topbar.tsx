@@ -11,6 +11,8 @@ import {
 
 import { dashboardModules } from "@/lib/dashboard-config";
 import { useUIStore } from "@/store/useUIStore";
+import { useOrganizationBranding } from "@/hooks/useOrganizationBranding";
+import { OrganizationLogo } from "@/components/common/OrganizationLogo";
 import { cn } from "@/lib/utils";
 
 interface SearchEntry {
@@ -46,6 +48,9 @@ export function Topbar({
   showSidebarToggle = false,
   onSidebarOpen,
 }: TopbarProps) {
+  // Fetch and cache organization branding (colors, font, logo) on mount
+  useOrganizationBranding();
+
   const router = useRouter();
   const pathname = usePathname();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -187,15 +192,14 @@ export function Topbar({
       }}
     >
       <div className="flex flex-col gap-5 px-4 py-4 sm:px-5 lg:px-6 xl:px-7">
-        <div
-          ref={containerRef}
-          className="relative flex items-center justify-center"
-        >
+        <div ref={containerRef} className="relative flex items-center gap-4">
+          <OrganizationLogo maxHeight={36} className="max-h-9 flex-shrink-0" />
+
           {showSidebarToggle ? (
             <button
               type="button"
               onClick={onSidebarOpen}
-              className="absolute left-0 flex h-10 w-10 items-center justify-center rounded-full border border-[var(--color-shell-border)] bg-[var(--color-shell)] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-shell-strong)]"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--color-shell-border)] bg-[var(--color-shell)] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-shell-strong)]"
               aria-label="Show sidebar"
             >
               <span className="pi pi-bars text-sm" aria-hidden="true" />

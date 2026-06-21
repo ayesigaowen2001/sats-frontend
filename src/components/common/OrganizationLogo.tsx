@@ -56,6 +56,18 @@ export function OrganizationLogo({
     : null;
   const hasLogo = !!logoUrl && !imgError;
 
+  // 🐛 DEBUG: trace logo resolution
+  console.log("[OrganizationLogo] Resolving logo:", {
+    organizationId,
+    brandingOrgId: branding.brandingOrgId,
+    orgMatches,
+    brandingLogoUrl: branding.brandingLogoUrl,
+    brandingLogoBlobUrl,
+    resolvedLogoUrl: logoUrl,
+    hasLogo,
+    imgError,
+  });
+
   if (!hasLogo) {
     if (fallback === "none") {
       return null;

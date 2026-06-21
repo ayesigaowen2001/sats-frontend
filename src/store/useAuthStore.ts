@@ -78,11 +78,30 @@ export const useAuthStore = create<AuthState>((set) => ({
     // Fire-and-forget: pre-fetch organization branding immediately after login
     // so it's available on auth pages (login, forgot-password, reset-password)
     // without waiting for the dashboard to load.
+    console.log(
+      "[useAuthStore] Login complete, fetching branding for org:",
+      organizationId,
+    );
     Promise.all([
       organizationBrandingService.getBranding(organizationId),
-      organizationBrandingService.getLogoUrl(organizationId).catch(() => null),
+      organizationBrandingService.getLogoUrl(organizationId).catch((err) => {
+        console.log(
+          "[useAuthStore] Logo URL fetch failed (may not exist):",
+          err,
+        );
+        return null;
+      }),
     ])
       .then(([branding, logoBlobUrl]) => {
+        console.log("[useAuthStore] Branding fetched:", {
+          hasLogoUrl: !!branding.logoUrl,
+          hasPrimary: !!branding.primaryColor,
+          hasBlobUrl: !!logoBlobUrl,
+          blobUrlPrefix: logoBlobUrl
+            ? logoBlobUrl.substring(0, 50) + "..."
+            : null,
+        });
+
         const brandingCache: BrandingCache = {
           brandingOrgId: organizationId,
           brandingPrimaryColor: branding.primaryColor || "",
@@ -108,7 +127,11 @@ export const useAuthStore = create<AuthState>((set) => ({
           });
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.log(
+          "[useAuthStore] Branding fetch failed (may not be configured):",
+          err,
+        );
         // Branding may not be configured for this org — that's okay
       });
   },

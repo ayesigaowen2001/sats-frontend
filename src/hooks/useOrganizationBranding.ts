@@ -29,18 +29,34 @@ export function useOrganizationBranding() {
 
   useEffect(() => {
     if (!organizationId) {
+      console.log("[useOrganizationBranding] No organizationId, skipping");
       return;
     }
 
     const cacheKey = `${organizationId}`;
+    console.log(
+      "[useOrganizationBranding] Running for org:",
+      organizationId,
+      "cacheKey:",
+      cacheKey,
+      "fetchedRef.current:",
+      fetchedRef.current,
+    );
 
     // Skip if we already fetched for this org
     if (fetchedRef.current === cacheKey) {
+      console.log(
+        "[useOrganizationBranding] Already fetched for this org, skipping",
+      );
       return;
     }
 
     // If already cached for this org, just apply the theme colors and skip fetch
     if (branding.brandingOrgId === organizationId) {
+      console.log(
+        "[useOrganizationBranding] Branding already cached for org, re-fetching blob URL only",
+      );
+
       if (
         branding.brandingPrimaryColor ||
         branding.brandingSecondaryColor ||
@@ -60,11 +76,19 @@ export function useOrganizationBranding() {
       organizationBrandingService
         .getLogoUrl(organizationId)
         .then((url: string) => {
+          console.log(
+            "[useOrganizationBranding] Got blob URL from re-fetch:",
+            url ? url.substring(0, 50) + "..." : null,
+          );
           if (fetchedRef.current === cacheKey) {
             setBrandingLogoBlobUrl(url);
           }
         })
-        .catch(() => {
+        .catch((err) => {
+          console.log(
+            "[useOrganizationBranding] Blob URL re-fetch failed (no logo set?):",
+            err,
+          );
           // No logo set — that's okay, the component will show its fallback
         });
 
