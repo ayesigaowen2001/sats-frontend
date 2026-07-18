@@ -880,7 +880,7 @@ export function VideoCamerasPageView(): React.JSX.Element {
               header: "Device ID",
               render: (row) => (
                 <code className="text-xs font-mono text-[var(--color-fog)]">
-                  {row.deviceId.slice(0, 8)}...
+                  {row.deviceId ? `${row.deviceId.slice(0, 8)}...` : "-"}
                 </code>
               ),
             },

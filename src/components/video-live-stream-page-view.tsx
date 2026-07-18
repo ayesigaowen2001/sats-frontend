@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ResourceFeedback } from "@/components/resource-feedback";
 import { getSessionData } from "@/lib/auth-tokens";
@@ -161,6 +161,108 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
 
   const streamFilter = `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) blur(${settings.blur}px)`;
 
+  const isMjpegStream = selectedCamera?.streamUrl
+    ? /\/video(\?|$)/.test(selectedCamera.streamUrl) ||
+      selectedCamera.streamUrl.startsWith("http://localhost") ||
+      /\/mjpeg/.test(selectedCamera.streamUrl) ||
+      /mjpg/.test(selectedCamera.streamUrl) ||
+      /cgi-bin/.test(selectedCamera.streamUrl) ||
+      /snapshot\.cgi/.test(selectedCamera.streamUrl) ||
+      /videostream\.cgi/.test(selectedCamera.streamUrl) ||
+      /\.mjpg/.test(selectedCamera.streamUrl)
+    : false;
+
+  // RTSP streams cannot be played directly in browsers
+  const isRtspStream = selectedCamera?.streamUrl
+    ? selectedCamera.streamUrl.startsWith("rtsp://")
+    : false;
+
+  // ---- IP Camera settings sync -------------------------------------------
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [apiSettingsApplied, setApiSettingsApplied] = useState(false);
+
+  const cameraConfigBase = useMemo(() => {
+    if (!selectedCamera?.streamUrl) return "";
+    try {
+      const url = new URL(selectedCamera.streamUrl);
+      return url.origin;
+    } catch {
+      return "";
+    }
+  }, [selectedCamera?.streamUrl]);
+
+  // Fetch current settings from the camera when it changes
+  useEffect(() => {
+    if (!cameraConfigBase) return;
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(`${cameraConfigBase}/api/settings`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const remote = await res.json();
+        // Map camera API values (0–3 range) to display values (50–200 range)
+        setSettings({
+          zoom: 1,
+          brightness: Math.round(((remote.brightness ?? 1) / 3) * 200),
+          contrast: Math.round(((remote.contrast ?? 1) / 3) * 200),
+          saturation: Math.round(((remote.saturation ?? 1) / 3) * 200),
+          blur: remote.blur ?? 0,
+        });
+        setApiSettingsApplied(true);
+      } catch {
+        setApiSettingsApplied(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [cameraConfigBase]);
+
+  // Debounced POST of settings to the camera
+  const syncToCamera = useCallback(
+    (next: DisplaySettings) => {
+      if (!cameraConfigBase) return;
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+
+      syncTimerRef.current = setTimeout(async () => {
+        try {
+          await fetch(`${cameraConfigBase}/api/settings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              brightness: (next.brightness / 200) * 3,
+              contrast: (next.contrast / 200) * 3,
+              saturation: (next.saturation / 200) * 3,
+              blur: next.blur,
+            }),
+          });
+        } catch {
+          // Silently ignore — CSS filter fallback is still active
+        }
+      }, 150);
+    },
+    [cameraConfigBase],
+  );
+
+  const updateSetting = useCallback(
+    (key: keyof DisplaySettings, value: number) => {
+      setSettings((prev) => {
+        const next = { ...prev, [key]: value };
+        if (apiSettingsApplied) syncToCamera(next);
+        return next;
+      });
+    },
+    [apiSettingsApplied, syncToCamera],
+  );
+
+  const handleResetSettings = useCallback(() => {
+    setSettings(defaultSettings);
+    if (apiSettingsApplied) syncToCamera(defaultSettings);
+  }, [apiSettingsApplied, syncToCamera]);
+  // -------------------------------------------------------------------------
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -262,20 +364,34 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
 
             {selectedCamera?.streamUrl ? (
               <div className="mt-3 overflow-hidden rounded-xl border border-white/15 bg-black/40">
-                <video
-                  key={selectedCamera.id}
-                  src={selectedCamera.streamUrl}
-                  controls
-                  autoPlay
-                  muted
-                  playsInline
-                  className="aspect-video w-full bg-black"
-                  style={{
-                    filter: streamFilter,
-                    transform: `scale(${settings.zoom})`,
-                    transformOrigin: "center center",
-                  }}
-                />
+                {isMjpegStream ? (
+                  <img
+                    key={selectedCamera.id}
+                    src={selectedCamera.streamUrl}
+                    className="aspect-video w-full bg-black object-contain"
+                    style={{
+                      filter: streamFilter,
+                      transform: `scale(${settings.zoom})`,
+                      transformOrigin: "center center",
+                    }}
+                    alt={`Live stream from ${selectedCamera.cameraName}`}
+                  />
+                ) : (
+                  <video
+                    key={selectedCamera.id}
+                    src={selectedCamera.streamUrl}
+                    controls
+                    autoPlay
+                    muted
+                    playsInline
+                    className="aspect-video w-full bg-black"
+                    style={{
+                      filter: streamFilter,
+                      transform: `scale(${settings.zoom})`,
+                      transformOrigin: "center center",
+                    }}
+                  />
+                )}
               </div>
             ) : (
               <div className="mt-3 rounded-xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm text-amber-100">
@@ -296,12 +412,19 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
 
             <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
               <div className="mb-3 flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-[var(--color-ice)]">
-                  Camera Settings
-                </h4>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-semibold text-[var(--color-ice)]">
+                    Camera Settings
+                  </h4>
+                  {apiSettingsApplied ? (
+                    <span className="text-xs text-emerald-400/70">
+                      ● synced to camera
+                    </span>
+                  ) : null}
+                </div>
                 <button
                   type="button"
-                  onClick={() => setSettings(defaultSettings)}
+                  onClick={handleResetSettings}
                   className="text-xs font-semibold text-[var(--color-sand)] hover:underline"
                 >
                   Reset
@@ -320,10 +443,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
                     step={0.1}
                     value={settings.zoom}
                     onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        zoom: Number(event.target.value),
-                      }))
+                      updateSetting("zoom", Number(event.target.value))
                     }
                     className="mt-2 w-full"
                   />
@@ -340,10 +460,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
                     step={1}
                     value={settings.brightness}
                     onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        brightness: Number(event.target.value),
-                      }))
+                      updateSetting("brightness", Number(event.target.value))
                     }
                     className="mt-2 w-full"
                   />
@@ -360,10 +477,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
                     step={1}
                     value={settings.contrast}
                     onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        contrast: Number(event.target.value),
-                      }))
+                      updateSetting("contrast", Number(event.target.value))
                     }
                     className="mt-2 w-full"
                   />
@@ -380,10 +494,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
                     step={1}
                     value={settings.saturation}
                     onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        saturation: Number(event.target.value),
-                      }))
+                      updateSetting("saturation", Number(event.target.value))
                     }
                     className="mt-2 w-full"
                   />
@@ -400,10 +511,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
                     step={0.1}
                     value={settings.blur}
                     onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        blur: Number(event.target.value),
-                      }))
+                      updateSetting("blur", Number(event.target.value))
                     }
                     className="mt-2 w-full"
                   />
