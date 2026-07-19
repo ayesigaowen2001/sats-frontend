@@ -29,6 +29,68 @@ const defaultSettings: DisplaySettings = {
   blur: 0,
 };
 
+/**
+ * If the stream URL is HTTP (not HTTPS), route it through the Next.js proxy
+ * to avoid Mixed Content blocking when the frontend is served over HTTPS.
+ *
+ * Also normalises bare IP Webcam root URLs (e.g. http://192.168.0.119:8080)
+ * to the actual MJPEG endpoint (/video).
+ *
+ * When NEXT_PUBLIC_CAMERA_RELAY_TUNNEL is set (deployed environment), URLs
+ * pointing to the local relay server (localhost:8080 or LAN:8080) are
+ * rewritten to the Cloudflare Tunnel public URL so remote users can reach
+ * the on-site camera relay.
+ */
+function resolveStreamUrl(rawUrl: string): string {
+  if (!rawUrl) return rawUrl;
+  if (rawUrl.startsWith("https://") || rawUrl.startsWith("/")) return rawUrl;
+
+  let url = rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+
+    // Normalise bare IP Webcam root URLs (port 8080, no path) → /video
+    if (
+      (parsed.port === "8080" || parsed.port === "") &&
+      (parsed.pathname === "/" || parsed.pathname === "") &&
+      !parsed.search
+    ) {
+      parsed.pathname = "/video";
+      url = parsed.toString();
+    }
+
+    // Remote deployment: rewrite local relay URLs to Cloudflare Tunnel.
+    // The relay serves cameras at http://localhost:8080/video/{id} (and
+    // LAN variants). Cloudflare Tunnel exposes the same paths — just the
+    // origin changes from http://localhost:8080 → https://tunnel.domain.
+    const tunnelBase = process.env.NEXT_PUBLIC_CAMERA_RELAY_TUNNEL;
+    if (tunnelBase && parsed.port === "8080") {
+      const isLocalRelay =
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "127.0.0.1" ||
+        /^(?:10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)/.test(
+          parsed.hostname,
+        );
+      if (isLocalRelay) {
+        // Replace the origin with the tunnel, keeping the path intact.
+        // e.g. http://localhost:8080/video/webcam → https://cameras.example.com/video/webcam
+        return `${tunnelBase.replace(/\/+$/, "")}${parsed.pathname}`;
+      }
+    }
+  } catch {
+    // fall back to raw string
+  }
+
+  // Local dev (no tunnel env var): proxy through Next.js API route
+  return `/api/video-proxy?url=${encodeURIComponent(url)}`;
+}
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 export function VideoLiveStreamPageView(): React.JSX.Element {
   const { user } = useAuthStore();
 
@@ -42,6 +104,18 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
 
   const [settings, setSettings] = useState<DisplaySettings>(defaultSettings);
 
+  // ---- Recording state ---------------------------------------------------
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const rafIdRef = useRef<number | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+
   const isSystemAdmin = useMemo(() => {
     if (!hasHydrated) return false;
     const sessionData = getSessionData();
@@ -52,7 +126,6 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
     if (!isSystemAdmin && user?.organizationId) {
       return user.organizationId;
     }
-
     return selectedOrgId;
   }, [isSystemAdmin, selectedOrgId, user?.organizationId]);
 
@@ -66,7 +139,6 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
       setCameras([]);
       return [];
     }
-
     return camerasService.listCameras(orgId);
   }, []);
 
@@ -82,16 +154,13 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
         organizationCrudService.listOrganizations(),
       ]);
 
-      if (!isMounted) {
-        return;
-      }
+      if (!isMounted) return;
 
       if (orgsResult.status === "fulfilled") {
         const options = orgsResult.value.map((org) => ({
           id: org.id,
           name: org.organization_name ?? `Organization ${org.id}`,
         }));
-
         setOrganizations(options);
 
         if (!isSystemAdmin && user?.organizationId) {
@@ -126,21 +195,15 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
       try {
         const rows = await loadCameras(activeOrgId);
 
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         setCameras(rows);
 
-        if (rows.some((camera) => camera.id === selectedCameraId)) {
-          return;
-        }
+        if (rows.some((camera) => camera.id === selectedCameraId)) return;
 
         setSelectedCameraId(rows[0]?.id ?? "");
       } catch (requestError) {
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         setCameras([]);
         setSelectedCameraId("");
@@ -162,17 +225,37 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
   const streamFilter = `brightness(${settings.brightness}%) contrast(${settings.contrast}%) saturate(${settings.saturation}%) blur(${settings.blur}px)`;
 
   const isMjpegStream = selectedCamera?.streamUrl
-    ? /\/video(\?|$)/.test(selectedCamera.streamUrl) ||
-      selectedCamera.streamUrl.startsWith("http://localhost") ||
-      /\/mjpeg/.test(selectedCamera.streamUrl) ||
-      /mjpg/.test(selectedCamera.streamUrl) ||
-      /cgi-bin/.test(selectedCamera.streamUrl) ||
-      /snapshot\.cgi/.test(selectedCamera.streamUrl) ||
-      /videostream\.cgi/.test(selectedCamera.streamUrl) ||
-      /\.mjpg/.test(selectedCamera.streamUrl)
+    ? (() => {
+        const url = selectedCamera.streamUrl;
+        if (
+          /\/video(\?|$)/.test(url) ||
+          /\/mjpeg/.test(url) ||
+          /mjpg/.test(url) ||
+          /cgi-bin/.test(url) ||
+          /snapshot\.cgi/.test(url) ||
+          /videostream\.cgi/.test(url) ||
+          /\.mjpg/.test(url)
+        ) {
+          return true;
+        }
+
+        try {
+          const parsed = new URL(url);
+          if (
+            parsed.port === "8080" &&
+            (parsed.pathname === "/" || parsed.pathname === "") &&
+            !parsed.search
+          ) {
+            return true;
+          }
+        } catch {
+          // ignore
+        }
+
+        return false;
+      })()
     : false;
 
-  // RTSP streams cannot be played directly in browsers
   const isRtspStream = selectedCamera?.streamUrl
     ? selectedCamera.streamUrl.startsWith("rtsp://")
     : false;
@@ -191,7 +274,6 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
     }
   }, [selectedCamera?.streamUrl]);
 
-  // Fetch current settings from the camera when it changes
   useEffect(() => {
     if (!cameraConfigBase) return;
     const controller = new AbortController();
@@ -203,7 +285,6 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
         });
         if (!res.ok) return;
         const remote = await res.json();
-        // Map camera API values (0–3 range) to display values (50–200 range)
         setSettings({
           zoom: 1,
           brightness: Math.round(((remote.brightness ?? 1) / 3) * 200),
@@ -220,7 +301,6 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
     return () => controller.abort();
   }, [cameraConfigBase]);
 
-  // Debounced POST of settings to the camera
   const syncToCamera = useCallback(
     (next: DisplaySettings) => {
       if (!cameraConfigBase) return;
@@ -239,7 +319,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
             }),
           });
         } catch {
-          // Silently ignore — CSS filter fallback is still active
+          // Silently ignore
         }
       }, 150);
     },
@@ -261,7 +341,131 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
     setSettings(defaultSettings);
     if (apiSettingsApplied) syncToCamera(defaultSettings);
   }, [apiSettingsApplied, syncToCamera]);
-  // -------------------------------------------------------------------------
+
+  // ---- Recording handlers (after all derived state) ----------------------
+  const handleStartRecording = useCallback(() => {
+    const cam = selectedCamera;
+    if (!cam) return;
+
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+      ? "video/webm;codecs=vp9"
+      : MediaRecorder.isTypeSupported("video/webm")
+        ? "video/webm"
+        : undefined;
+
+    if (!mimeType) {
+      setLoadError("Recording is not supported in this browser.");
+      return;
+    }
+
+    chunksRef.current = [];
+
+    if (isMjpegStream) {
+      const canvas = canvasRef.current;
+      const img = imgRef.current;
+      if (!canvas || !img) return;
+
+      canvas.width = img.naturalWidth || 640;
+      canvas.height = img.naturalHeight || 480;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const drawFrame = () => {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        rafIdRef.current = requestAnimationFrame(drawFrame);
+      };
+      drawFrame();
+
+      const canvasStream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(canvasStream, { mimeType });
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${cam.cameraName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start(250);
+    } else {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const videoStream = (
+        video as HTMLVideoElement & { captureStream(fps?: number): MediaStream }
+      ).captureStream(30);
+
+      if (!videoStream) {
+        setLoadError("Cannot capture video stream from this source.");
+        return;
+      }
+
+      const recorder = new MediaRecorder(videoStream, { mimeType });
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${cam.cameraName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start(250);
+    }
+
+    setIsRecording(true);
+    setRecordingSeconds(0);
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingSeconds((prev) => prev + 1);
+    }, 1000);
+  }, [selectedCamera, isMjpegStream, setLoadError]);
+
+  const handleStopRecording = useCallback(() => {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }, []);
+
+  // Stop recording when switching cameras
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+      setRecordingSeconds(0);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, [selectedCameraId]);
+  // -----------------------------------------------------------------------
 
   return (
     <div className="flex flex-col gap-6">
@@ -358,16 +562,52 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
           </section>
 
           <section className="rounded-2xl border border-white/10 bg-black/15 p-4">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-fog)]">
-              Stream Player
-            </h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-fog)]">
+                Stream Player
+              </h3>
+
+              {/* Record button — only if not recording or to stop */}
+              {selectedCamera?.streamUrl ? (
+                <div className="flex items-center gap-2">
+                  {isRecording ? (
+                    <>
+                      <span className="flex items-center gap-1.5 rounded-full bg-rose-500/20 px-3 py-1 text-xs font-semibold text-rose-300">
+                        <span className="inline-block h-2 w-2 rounded-full bg-rose-400 animate-pulse" />
+                        {formatTime(recordingSeconds)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleStopRecording}
+                        className="rounded-lg border border-rose-400/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/20"
+                      >
+                        Stop
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleStartRecording}
+                      className="flex items-center gap-1.5 rounded-lg border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/12 px-3 py-1.5 text-xs font-semibold text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/22"
+                    >
+                      <span className="inline-block h-2 w-2 rounded-full bg-rose-400" />
+                      Record
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Hidden canvas used for MJPEG → MediaStream capture */}
+            <canvas ref={canvasRef} className="hidden" aria-hidden />
 
             {selectedCamera?.streamUrl ? (
               <div className="mt-3 overflow-hidden rounded-xl border border-white/15 bg-black/40">
                 {isMjpegStream ? (
                   <img
+                    ref={imgRef}
                     key={selectedCamera.id}
-                    src={selectedCamera.streamUrl}
+                    src={resolveStreamUrl(selectedCamera.streamUrl)}
                     className="aspect-video w-full bg-black object-contain"
                     style={{
                       filter: streamFilter,
@@ -378,8 +618,9 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
                   />
                 ) : (
                   <video
+                    ref={videoRef}
                     key={selectedCamera.id}
-                    src={selectedCamera.streamUrl}
+                    src={resolveStreamUrl(selectedCamera.streamUrl)}
                     controls
                     autoPlay
                     muted

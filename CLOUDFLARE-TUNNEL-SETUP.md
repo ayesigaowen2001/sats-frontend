@@ -106,15 +106,83 @@ cloudflared service install
 This installs cloudflared as a Windows service using the config at
 `C:\Users\YOURNAME\.cloudflared\config.yml`.
 
-## Step 8: Configure SATS cameras
+## Step 8: Configure the deployed SATS frontend
 
-In the deployed SATS Render app, set each camera's `streamUrl`:
+Add the `NEXT_PUBLIC_CAMERA_RELAY_TUNNEL` environment variable on the
+deployed (Render) instance so the stream player rewrites local camera URLs
+to the Cloudflare Tunnel:
 
-| Camera       | streamUrl                                              |
-| ------------ | ------------------------------------------------------ |
-| Local Webcam | `https://cameras.yourdomain.com/video/webcam`          |
-| Front Gate   | `https://cameras.yourdomain.com/video/ipcam-front`     |
-| Perimeter    | `https://cameras.yourdomain.com/video/ipcam-perimeter` |
+```
+NEXT_PUBLIC_CAMERA_RELAY_TUNNEL=https://cameras.yourdomain.com
+```
+
+The frontend automatically detects URLs pointing to `localhost:8080` or any
+LAN IP on port 8080 and replaces the origin with this value. The path is
+preserved — so `http://localhost:8080/video/webcam` becomes
+`https://cameras.yourdomain.com/video/webcam`.
+
+**No database changes needed.** The same camera records work in both
+environments:
+
+- Local dev (no tunnel env var) → proxied through `/api/video-proxy`
+- Deployed (tunnel env var set) → rewritten to Cloudflare Tunnel HTTPS URL
+
+## Step 9: Configure SATS cameras (same records work everywhere)
+
+In the SATS app, set each camera's `streamUrl` to the **local relay**
+address — the frontend rewrites it automatically for remote users:
+
+| Camera       | streamUrl                                     |
+| ------------ | --------------------------------------------- |
+| Local Webcam | `http://localhost:8080/video/webcam`          |
+| Front Gate   | `http://localhost:8080/video/ipcam-front`     |
+| Perimeter    | `http://localhost:8080/video/ipcam-perimeter` |
+| Phone Cam    | `http://192.168.0.119:8080`                   |
+
+## Starting everything
+
+```bash
+# Terminal 1 — start the camera relay (on-site machine)
+python webcam-stream.py --config cameras.json
+
+# Terminal 2 — start the Cloudflare Tunnel
+cloudflared tunnel run sats-camera-relay
+
+# The deployed SATS app now uses NEXT_PUBLIC_CAMERA_RELAY_TUNNEL
+# to reach https://cameras.yourdomain.com/video/{camera_id}
+```
+
+## Architecture (updated)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ON-SITE MACHINE (Windows/Linux)                                      │
+│                                                                      │
+│  IP Cameras / Webcams ──▶ webcam-stream.py (:8080) ──▶ cloudflared  │
+│                                    │                         │       │
+│                                    │                         │       │
+│  SATS local dev (:3000) ◀─────────╯               Cloudflare Tunnel │
+│  (proxied via /api/video-proxy)                                      │
+└─────────────────────────────────────────────────────────────────────┘
+                                                         │
+                                                         ▼
+                                            https://cameras.yourdomain.com
+                                                         │
+                                                         │
+┌────────────────────────────────────────────────────────┼────────────┐
+│ REMOTE USERS                                           │            │
+│                                                        ▼            │
+│  SATS deployed (Render) ──▶ NEXT_PUBLIC_CAMERA_RELAY_TUNNEL rewrites │
+│  camera URLs from localhost:8080 → https://cameras.yourdomain.com    │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+**How URL resolution works:**
+
+| Environment       | Env var set?     | `http://localhost:8080/video/webcam` becomes...              |
+| ----------------- | ---------------- | ------------------------------------------------------------ |
+| Local dev (:3000) | No (undefined)   | `/api/video-proxy?url=...` (Next.js proxy)                   |
+| Deployed (Render) | Yes (tunnel URL) | `https://cameras.yourdomain.com/video/webcam` (direct HTTPS) |
 
 ## Starting everything
 
