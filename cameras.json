@@ -1,20 +1,8 @@
 [
   {
-    "id": "webcam",
-    "name": "Local Webcam",
-    "source": "0",
+    "id": "phone cam",
+    "name": "phone camera",
+    "source": "http://192.168.0.119:8080",
     "resolution": "640x480"
-  },
-  {
-    "id": "ipcam-front",
-    "name": "Front Gate Camera",
-    "source": "rtsp://192.168.1.10:554/stream",
-    "resolution": "1280x720"
-  },
-  {
-    "id": "ipcam-perimeter",
-    "name": "Perimeter Camera",
-    "source": "rtsp://192.168.1.11:554/stream",
-    "resolution": "1280x720"
   }
 ]

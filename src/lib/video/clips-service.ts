@@ -8,57 +8,79 @@ interface ApiErrorPayload {
 }
 
 interface ClipApiModel {
-  clip_id?: string;
   id?: string;
-  camera_id: string;
-  animal_id?: string | null;
-  timestamp?: string;
-  video_path?: string;
-  videopath?: string;
-  activity_detected?: string | null;
+  clip_id?: string;
+  device_number?: string;
+  animal_number?: string | null;
+  recording_started_at?: string;
+  recording_ended_at?: string;
   duration_seconds?: number | null;
-  created_by?: string | null;
-  organization_id?: string | null;
+  video_url?: string;
+  activity_detected?: string | null;
   created_at?: string;
   updated_at?: string;
 }
 
 export interface VideoClip {
   id: string;
-  cameraId: string;
-  animalId: string;
-  timestamp: string;
-  videoPath: string;
-  activityDetected: string;
+  deviceNumber: string;
+  animalNumber: string;
+  recordingStartedAt: string;
+  recordingEndedAt: string;
   durationSeconds: number;
-  createdBy: string;
-  organizationId: string | null;
-  createdAt?: string;
-  updatedAt?: string;
+  videoUrl: string;
+  activityDetected: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface VideoClipInput {
-  camera_id: string;
-  animal_id: string;
-  timestamp: string;
-  video_path: string;
-  activity_detected: string;
-  duration_seconds: number;
+export interface ClipUploadInput {
+  device_number: string;
+  recording_started_at: string;
+  recording_ended_at: string;
+  animal_number?: string | null;
+  activity_detected?: string | null;
+}
+
+export interface ClipListFilters {
+  device_number?: string | null;
+  animal_number?: string | null;
+  activity?: string | null;
+  recorded_from?: string | null;
+  recorded_to?: string | null;
+  page?: number;
+  per_page?: number;
+}
+
+export interface ClipPagination {
+  total: number;
+  pages: number;
+  page: number;
+  perPage: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+  nextPage: number | null;
+  prevPage: number | null;
+}
+
+export interface ClipListResult {
+  items: VideoClip[];
+  pagination: ClipPagination;
+  message: string;
 }
 
 function mapClip(item: ClipApiModel): VideoClip {
   return {
-    id: String(item.clip_id ?? item.id ?? ""),
-    cameraId: item.camera_id,
-    animalId: item.animal_id ?? "",
-    timestamp: item.timestamp ?? "",
-    videoPath: item.video_path ?? item.videopath ?? "",
-    activityDetected: item.activity_detected ?? "",
+    id: String(item.id ?? item.clip_id ?? ""),
+    deviceNumber: item.device_number ?? "",
+    animalNumber: item.animal_number ?? "",
+    recordingStartedAt: item.recording_started_at ?? "",
+    recordingEndedAt: item.recording_ended_at ?? "",
     durationSeconds: item.duration_seconds ?? 0,
-    createdBy: item.created_by ?? "",
-    organizationId: item.organization_id ?? null,
-    createdAt: item.created_at,
-    updatedAt: item.updated_at,
+    videoUrl: item.video_url ?? "",
+    activityDetected: item.activity_detected ?? "",
+    createdAt: item.created_at ?? "",
+    updatedAt: item.updated_at ?? "",
   };
 }
 
@@ -73,6 +95,29 @@ function extractList<T>(payload: unknown): T[] {
   }
 
   return [];
+}
+
+function extractPagination(payload: unknown): ClipPagination | null {
+  if (payload && typeof payload === "object" && "pagination" in payload) {
+    const pagination = (payload as { pagination: unknown }).pagination;
+    if (pagination && typeof pagination === "object") {
+      const p = pagination as Record<string, unknown>;
+      if (typeof p.total === "number" && typeof p.pages === "number") {
+        return {
+          total: p.total,
+          pages: p.pages,
+          page: typeof p.page === "number" ? p.page : 1,
+          perPage: typeof p.per_page === "number" ? p.per_page : 20,
+          hasNext: p.has_next === true,
+          hasPrev: p.has_prev === true,
+          nextPage: typeof p.next_page === "number" ? p.next_page : null,
+          prevPage: typeof p.prev_page === "number" ? p.prev_page : null,
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 async function getApiErrorMessage(
@@ -111,29 +156,7 @@ async function getApiErrorMessage(
 }
 
 export class ClipsService {
-  private createHeaders(includeJson = true, organizationId?: string) {
-    const headers = new Headers({
-      Accept: "application/json",
-    });
-
-    if (includeJson) {
-      headers.set("Content-Type", "application/json");
-    }
-
-    const accessToken = getAccessToken();
-
-    if (accessToken) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
-    }
-
-    if (organizationId) {
-      headers.set("organization_id", organizationId);
-    }
-
-    return headers;
-  }
-
-  private createMultipartHeaders(organizationId?: string) {
+  private createMultipartHeaders() {
     const headers = new Headers({
       Accept: "application/json",
     });
@@ -144,19 +167,68 @@ export class ClipsService {
       headers.set("Authorization", `Bearer ${accessToken}`);
     }
 
-    if (organizationId) {
-      headers.set("organization_id", organizationId);
+    return headers;
+  }
+
+  private createHeaders() {
+    const headers = new Headers({
+      Accept: "application/json",
+    });
+
+    const accessToken = getAccessToken();
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
     }
 
     return headers;
   }
 
-  async listClips(orgId: string): Promise<VideoClip[]> {
+  async listClips(
+    orgId: string,
+    filters: ClipListFilters = {},
+  ): Promise<ClipListResult> {
+    const query = new URLSearchParams();
+
+    if (filters.device_number?.trim()) {
+      query.set("device_number", filters.device_number.trim());
+    }
+
+    if (filters.animal_number?.trim()) {
+      query.set("animal_number", filters.animal_number.trim());
+    }
+
+    if (filters.activity?.trim()) {
+      query.set("activity", filters.activity.trim());
+    }
+
+    if (filters.recorded_from?.trim()) {
+      query.set("recorded_from", filters.recorded_from.trim());
+    }
+
+    if (filters.recorded_to?.trim()) {
+      query.set("recorded_to", filters.recorded_to.trim());
+    }
+
+    query.set(
+      "page",
+      String(filters.page && filters.page > 0 ? filters.page : 1),
+    );
+    query.set(
+      "per_page",
+      String(
+        filters.per_page && filters.per_page > 0
+          ? Math.min(filters.per_page, 100)
+          : 20,
+      ),
+    );
+
+    const queryString = query.toString();
     const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips`,
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips?${queryString}`,
       {
         method: "GET",
-        headers: this.createHeaders(false),
+        headers: this.createHeaders(),
         cache: "no-store",
       },
     );
@@ -171,16 +243,60 @@ export class ClipsService {
     }
 
     const payload = (await response.json()) as unknown;
-    return extractList<ClipApiModel>(payload).map(mapClip);
+    const items = extractList<ClipApiModel>(payload).map(mapClip);
+    const pagination = extractPagination(payload);
+    const fallbackPage = filters.page && filters.page > 0 ? filters.page : 1;
+    const fallbackPerPage =
+      filters.per_page && filters.per_page > 0
+        ? Math.min(filters.per_page, 100)
+        : 20;
+    const message =
+      payload && typeof payload === "object" && "message" in payload
+        ? String((payload as { message: unknown }).message ?? "")
+        : "";
+
+    return {
+      items,
+      pagination: pagination ?? {
+        total: items.length,
+        pages: 1,
+        page: fallbackPage,
+        perPage: fallbackPerPage,
+        hasNext: false,
+        hasPrev: false,
+        nextPage: null,
+        prevPage: null,
+      },
+      message,
+    };
   }
 
-  async getClipById(orgId: string, clipId: string): Promise<VideoClip> {
+  async uploadClip(
+    orgId: string,
+    input: ClipUploadInput,
+    file: File,
+  ): Promise<VideoClip> {
+    const formData = new FormData();
+    formData.append("device_number", input.device_number);
+    formData.append("recording_started_at", input.recording_started_at);
+    formData.append("recording_ended_at", input.recording_ended_at);
+
+    if (input.animal_number?.trim()) {
+      formData.append("animal_number", input.animal_number.trim());
+    }
+
+    if (input.activity_detected?.trim()) {
+      formData.append("activity_detected", input.activity_detected.trim());
+    }
+
+    formData.append("file", file, file.name);
+
     const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips/${encodeURIComponent(clipId)}`,
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips`,
       {
-        method: "GET",
-        headers: this.createHeaders(false),
-        cache: "no-store",
+        method: "POST",
+        headers: this.createMultipartHeaders(),
+        body: formData,
       },
     );
 
@@ -188,154 +304,13 @@ export class ClipsService {
       throw new Error(
         await getApiErrorMessage(
           response,
-          `Failed to load clip: ${response.status}`,
+          `Failed to upload clip: ${response.status}`,
         ),
       );
     }
 
     const payload = (await response.json()) as ClipApiModel;
     return mapClip(payload);
-  }
-
-  async createClip(orgId: string, input: VideoClipInput): Promise<void> {
-    const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips`,
-      {
-        method: "POST",
-        headers: this.createHeaders(true, orgId),
-        body: JSON.stringify(input),
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        await getApiErrorMessage(
-          response,
-          `Failed to create clip: ${response.status}`,
-        ),
-      );
-    }
-  }
-
-  async createClipWithFile(
-    orgId: string,
-    input: VideoClipInput,
-    file: File,
-  ): Promise<void> {
-    const formData = new FormData();
-    formData.append("camera_id", input.camera_id);
-    formData.append("animal_id", input.animal_id);
-    formData.append("timestamp", input.timestamp);
-    formData.append("activity_detected", input.activity_detected);
-    formData.append("duration_seconds", String(input.duration_seconds));
-    formData.append("video_path", input.video_path || file.name);
-    formData.append("file", file, file.name);
-
-    const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips`,
-      {
-        method: "POST",
-        headers: this.createMultipartHeaders(orgId),
-        body: formData,
-      },
-    );
-
-    if (response.ok) {
-      return;
-    }
-
-    // Fallback to JSON payload if the backend does not accept multipart for this endpoint.
-    await this.createClip(orgId, {
-      ...input,
-      video_path: input.video_path || file.name,
-    });
-  }
-
-  async updateClip(
-    orgId: string,
-    clipId: string,
-    input: Partial<VideoClipInput>,
-  ): Promise<void> {
-    const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips/${encodeURIComponent(clipId)}`,
-      {
-        method: "PATCH",
-        headers: this.createHeaders(true, orgId),
-        body: JSON.stringify(input),
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        await getApiErrorMessage(
-          response,
-          `Failed to update clip: ${response.status}`,
-        ),
-      );
-    }
-  }
-
-  async updateClipWithFile(
-    orgId: string,
-    clipId: string,
-    input: Partial<VideoClipInput>,
-    file: File,
-  ): Promise<void> {
-    const formData = new FormData();
-
-    if (input.camera_id) formData.append("camera_id", input.camera_id);
-    if (typeof input.animal_id === "string")
-      formData.append("animal_id", input.animal_id);
-    if (typeof input.timestamp === "string")
-      formData.append("timestamp", input.timestamp);
-    if (typeof input.activity_detected === "string") {
-      formData.append("activity_detected", input.activity_detected);
-    }
-    if (typeof input.duration_seconds === "number") {
-      formData.append("duration_seconds", String(input.duration_seconds));
-    }
-    if (typeof input.video_path === "string") {
-      formData.append("video_path", input.video_path);
-    }
-
-    formData.append("file", file, file.name);
-
-    const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips/${encodeURIComponent(clipId)}`,
-      {
-        method: "PATCH",
-        headers: this.createMultipartHeaders(orgId),
-        body: formData,
-      },
-    );
-
-    if (response.ok) {
-      return;
-    }
-
-    await this.updateClip(orgId, clipId, {
-      ...input,
-      video_path: input.video_path || file.name,
-    });
-  }
-
-  async deleteClip(orgId: string, clipId: string): Promise<void> {
-    const response = await fetch(
-      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips/${encodeURIComponent(clipId)}`,
-      {
-        method: "DELETE",
-        headers: this.createHeaders(false, orgId),
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        await getApiErrorMessage(
-          response,
-          `Failed to delete clip: ${response.status}`,
-        ),
-      );
-    }
   }
 }
 

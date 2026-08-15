@@ -6,6 +6,7 @@ import { ResourceFeedback } from "@/components/resource-feedback";
 import { getSessionData } from "@/lib/auth-tokens";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
 import { camerasService, type Camera } from "@/lib/video/cameras-service";
+import { clipsService } from "@/lib/video/clips-service";
 import { useAuthStore } from "@/store/useAuthStore";
 
 interface OrganizationOption {
@@ -115,6 +116,18 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+
+  const [uploadStatus, setUploadStatus] = useState<
+    "idle" | "uploading" | "success" | "error"
+  >("idle");
+  const [uploadMessage, setUploadMessage] = useState("");
+  const recordingStartedAtRef = useRef<string>("");
+  const pendingClipRef = useRef<{
+    blob: Blob;
+    fileName: string;
+    startedAt: string;
+  } | null>(null);
+  const [pendingUploadCount, setPendingUploadCount] = useState(0);
 
   const isSystemAdmin = useMemo(() => {
     if (!hasHydrated) return false;
@@ -383,14 +396,13 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
       };
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${cam.cameraName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.webm`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        const fileName = `${cam.cameraName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.webm`;
+        pendingClipRef.current = {
+          blob,
+          fileName,
+          startedAt: recordingStartedAtRef.current,
+        };
+        setPendingUploadCount((count) => count + 1);
 
         if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = null;
@@ -416,14 +428,13 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
       };
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${cam.cameraName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.webm`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        const fileName = `${cam.cameraName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.webm`;
+        pendingClipRef.current = {
+          blob,
+          fileName,
+          startedAt: recordingStartedAtRef.current,
+        };
+        setPendingUploadCount((count) => count + 1);
       };
       mediaRecorderRef.current = recorder;
       recorder.start(250);
@@ -431,6 +442,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
 
     setIsRecording(true);
     setRecordingSeconds(0);
+    recordingStartedAtRef.current = new Date().toISOString();
     recordingTimerRef.current = setInterval(() => {
       setRecordingSeconds((prev) => prev + 1);
     }, 1000);
@@ -446,6 +458,62 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
       recordingTimerRef.current = null;
     }
   }, []);
+
+  // Upload the recorded clip to the clips endpoint once recording stops.
+  useEffect(() => {
+    if (pendingUploadCount === 0) return;
+
+    const pending = pendingClipRef.current;
+    pendingClipRef.current = null;
+    if (!pending) return;
+
+    let cancelled = false;
+
+    (async () => {
+      if (!activeOrgId || !selectedCamera) {
+        if (!cancelled) {
+          setUploadStatus("error");
+          setUploadMessage(
+            "Cannot upload clip: no organization or camera selected.",
+          );
+        }
+        return;
+      }
+
+      setUploadStatus("uploading");
+      setUploadMessage("");
+
+      try {
+        const file = new File([pending.blob], pending.fileName, {
+          type: "video/webm",
+        });
+
+        const clip = await clipsService.uploadClip(
+          activeOrgId,
+          {
+            device_number: selectedCamera.deviceNumber,
+            recording_started_at: pending.startedAt || new Date().toISOString(),
+            recording_ended_at: new Date().toISOString(),
+          },
+          file,
+        );
+
+        if (cancelled) return;
+        setUploadStatus("success");
+        setUploadMessage(`Clip uploaded (${clip.id.slice(0, 8)}).`);
+      } catch (error) {
+        if (cancelled) return;
+        setUploadStatus("error");
+        setUploadMessage(
+          error instanceof Error ? error.message : "Failed to upload clip.",
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingUploadCount, activeOrgId, selectedCamera]);
 
   // Stop recording when switching cameras
   useEffect(() => {
@@ -597,6 +665,22 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
                 </div>
               ) : null}
             </div>
+
+            {uploadStatus !== "idle" ? (
+              <p
+                className={`mt-2 text-xs font-semibold ${
+                  uploadStatus === "uploading"
+                    ? "text-[var(--color-sand)]"
+                    : uploadStatus === "success"
+                      ? "text-emerald-300"
+                      : "text-rose-300"
+                }`}
+              >
+                {uploadStatus === "uploading"
+                  ? "Uploading clip…"
+                  : uploadMessage}
+              </p>
+            ) : null}
 
             {/* Hidden canvas used for MJPEG → MediaStream capture */}
             <canvas ref={canvasRef} className="hidden" aria-hidden />

@@ -21,12 +21,12 @@ interface OrganizationOption {
 }
 
 interface DeviceOption {
-  id: string;
+  value: string;
   label: string;
 }
 
 interface CameraFormValues extends Record<string, string | boolean> {
-  device_id: string;
+  device_number: string;
   camera_name: string;
   stream_url: string;
   latitude: string;
@@ -35,7 +35,7 @@ interface CameraFormValues extends Record<string, string | boolean> {
 }
 
 const defaultValues: CameraFormValues = {
-  device_id: "",
+  device_number: "",
   camera_name: "",
   stream_url: "",
   latitude: "",
@@ -43,18 +43,12 @@ const defaultValues: CameraFormValues = {
   is_active: true,
 };
 
-function isValidUuid(value: string): boolean {
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(value);
-}
-
 function toPayload(values: CameraFormValues): CameraInput {
   const latitude = values.latitude ? Number(values.latitude) : undefined;
   const longitude = values.longitude ? Number(values.longitude) : undefined;
 
   return {
-    device_id: values.device_id,
+    device_number: values.device_number.trim(),
     camera_name: values.camera_name,
     stream_url: values.stream_url,
     geo_coordinates:
@@ -70,7 +64,7 @@ function toPayload(values: CameraFormValues): CameraInput {
 
 function fromCamera(camera: Camera): CameraFormValues {
   return {
-    device_id: camera.deviceId,
+    device_number: camera.deviceNumber,
     camera_name: camera.cameraName,
     stream_url: camera.streamUrl,
     latitude: camera.latitude ? String(camera.latitude) : "",
@@ -155,8 +149,8 @@ export function VideoCamerasPageView(): React.JSX.Element {
 
     const records = await devicesService.listDevicesByOrganization(orgId);
     const options = records.map((device) => ({
-      id: device.id,
-      label: device.deviceSerial || device.id,
+      value: device.deviceNumber || device.deviceSerial || device.id,
+      label: device.deviceNumber || device.deviceSerial || device.id,
     }));
 
     setDevices(options);
@@ -256,13 +250,13 @@ export function VideoCamerasPageView(): React.JSX.Element {
         }
 
         setCreateValues((prev) => {
-          if (options.some((device) => device.id === prev.device_id)) {
+          if (options.some((device) => device.value === prev.device_number)) {
             return prev;
           }
 
           return {
             ...prev,
-            device_id: options[0]?.id ?? "",
+            device_number: options[0]?.value ?? "",
           };
         });
 
@@ -271,13 +265,13 @@ export function VideoCamerasPageView(): React.JSX.Element {
             return prev;
           }
 
-          if (options.some((device) => device.id === prev.device_id)) {
+          if (options.some((device) => device.value === prev.device_number)) {
             return prev;
           }
 
           return {
             ...prev,
-            device_id: options[0]?.id ?? "",
+            device_number: options[0]?.value ?? "",
           };
         });
       } catch {
@@ -302,13 +296,17 @@ export function VideoCamerasPageView(): React.JSX.Element {
       return;
     }
 
-    if (!createValues.device_id.trim()) {
-      setCreateError("Device ID is required.");
+    if (!createValues.device_number.trim()) {
+      setCreateError("Device number is required.");
       return;
     }
 
-    if (!devices.some((device) => device.id === createValues.device_id)) {
-      setCreateError("Please select a valid device for this organization.");
+    if (
+      !devices.some((device) => device.value === createValues.device_number)
+    ) {
+      setCreateError(
+        "Please select a valid device number for this organization.",
+      );
       return;
     }
 
@@ -360,13 +358,17 @@ export function VideoCamerasPageView(): React.JSX.Element {
       return;
     }
 
-    if (!updateValues.device_id.trim()) {
-      setUpdateError("Device ID is required.");
+    if (!updateValues.device_number.trim()) {
+      setUpdateError("Device number is required.");
       return;
     }
 
-    if (!devices.some((device) => device.id === updateValues.device_id)) {
-      setUpdateError("Please select a valid device for this organization.");
+    if (
+      !devices.some((device) => device.value === updateValues.device_number)
+    ) {
+      setUpdateError(
+        "Please select a valid device number for this organization.",
+      );
       return;
     }
 
@@ -492,7 +494,7 @@ export function VideoCamerasPageView(): React.JSX.Element {
               setEditingCamera(null);
               setCreateValues((prev) => ({
                 ...defaultValues,
-                device_id: devices[0]?.id ?? prev.device_id,
+                device_number: devices[0]?.value ?? prev.device_number,
               }));
               setShowCreateForm(true);
             }}
@@ -558,22 +560,22 @@ export function VideoCamerasPageView(): React.JSX.Element {
 
           <label className="block">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Device ID
+              Device Number
             </span>
             <select
               required
-              value={createValues.device_id}
+              value={createValues.device_number}
               onChange={(event) =>
                 setCreateValues((prev) => ({
                   ...prev,
-                  device_id: event.target.value,
+                  device_number: event.target.value,
                 }))
               }
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             >
               <option value="">-- Select device --</option>
               {devices.map((device) => (
-                <option key={device.id} value={device.id}>
+                <option key={device.value} value={device.value}>
                   {device.label}
                 </option>
               ))}
@@ -718,22 +720,22 @@ export function VideoCamerasPageView(): React.JSX.Element {
 
           <label className="block">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Device ID
+              Device Number
             </span>
             <select
               required
-              value={updateValues.device_id}
+              value={updateValues.device_number}
               onChange={(event) =>
                 setUpdateValues((prev) => ({
                   ...prev,
-                  device_id: event.target.value,
+                  device_number: event.target.value,
                 }))
               }
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             >
               <option value="">-- Select device --</option>
               {devices.map((device) => (
-                <option key={device.id} value={device.id}>
+                <option key={device.value} value={device.value}>
                   {device.label}
                 </option>
               ))}
@@ -877,10 +879,10 @@ export function VideoCamerasPageView(): React.JSX.Element {
               render: (row) => row.cameraName,
             },
             {
-              header: "Device ID",
+              header: "Device Number",
               render: (row) => (
                 <code className="text-xs font-mono text-[var(--color-fog)]">
-                  {row.deviceId ? `${row.deviceId.slice(0, 8)}...` : "-"}
+                  {row.deviceNumber || "-"}
                 </code>
               ),
             },
