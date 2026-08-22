@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { PageNumbers } from "@/components/common/pagination";
 import { DataPanel } from "@/components/data-panel";
 import { DataTable } from "@/components/data-table";
 import {
@@ -364,40 +365,16 @@ export function HealthLiveMonitoringPageView(): React.JSX.Element {
         />
       </DataPanel>
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <button
-          type="button"
-          disabled={isLoading || !pagination?.hasPrev || currentPage <= 1}
-          onClick={() =>
-            applyFilters({
-              ...filters,
-              page: String(Math.max(1, currentPage - 1)),
-            })
+      <div className="flex flex-col items-center gap-2">
+        <PageNumbers
+          currentPage={currentPage}
+          totalPages={totalPages}
+          disabled={isLoading}
+          onPageChange={(nextPage) =>
+            applyFilters({ ...filters, page: String(nextPage) })
           }
-          className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Previous
-        </button>
-
-        <span className="text-sm text-[var(--color-mist)]">
-          Page {currentPage} / {totalPages}
-        </span>
-
-        <button
-          type="button"
-          disabled={
-            isLoading || !pagination?.hasNext || currentPage >= totalPages
-          }
-          onClick={() =>
-            applyFilters({
-              ...filters,
-              page: String(currentPage + 1),
-            })
-          }
-          className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Next
-        </button>
+        />
+        <span className="text-xs text-[var(--color-mist)]">{pageSummary}</span>
       </div>
     </main>
   );
