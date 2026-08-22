@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 
+import { PageNumbers } from "@/components/common/pagination";
 import { DataPanel } from "@/components/data-panel";
 import { DataTable } from "@/components/data-table";
 import { getSessionData } from "@/lib/auth-tokens";
@@ -1012,31 +1013,20 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
             ]}
           />
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={isLoading || !pagination?.hasPrev}
-              onClick={() => {
-                const nextPage = String(Math.max(1, currentPage - 1));
-                const nextFilters = { ...filters, page: nextPage };
-                applyFilters(nextFilters);
-              }}
-              className="rounded-full border border-white/20 px-4 py-1.5 text-sm text-[var(--color-ice)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Previous page
-            </button>
-            <button
-              type="button"
-              disabled={isLoading || !pagination?.hasNext}
-              onClick={() => {
-                const nextPage = String(currentPage + 1);
-                const nextFilters = { ...filters, page: nextPage };
-                applyFilters(nextFilters);
-              }}
-              className="rounded-full border border-white/20 px-4 py-1.5 text-sm text-[var(--color-ice)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Next page
-            </button>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+            <PageNumbers
+              currentPage={currentPage}
+              totalPages={pagination?.pages ?? 1}
+              disabled={isLoading}
+              onPageChange={(nextPage) =>
+                applyFilters({ ...filters, page: String(nextPage) })
+              }
+            />
+            {pagination ? (
+              <span className="text-xs text-[var(--color-mist)]">
+                {pagination.total} total
+              </span>
+            ) : null}
           </div>
         </DataPanel>
       )}

@@ -6,6 +6,7 @@ import {
   EntityForm,
   type EntityFormField,
 } from "@/components/common/entity-form";
+import { PageNumbers } from "@/components/common/pagination";
 import { ResourceRowActions } from "@/components/common/resource-row-actions";
 import { DataTable } from "@/components/data-table";
 import { ResourceFeedback } from "@/components/resource-feedback";
@@ -732,29 +733,11 @@ export function AllAnimalsPageView() {
           />
 
           {/* Pagination */}
-          {pagination && pagination.pages > 1 ? (
-            <div className="flex items-center justify-center gap-2">
-              <button
-                type="button"
-                disabled={!pagination.has_prev}
-                onClick={() => goToPage(pagination.page - 1)}
-                className="rounded-md border border-white/10 bg-white/5 px-3 py-1 text-sm text-[var(--color-ice)] transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <span className="text-sm text-[var(--color-mist)]">
-                Page {pagination.page} of {pagination.pages}
-              </span>
-              <button
-                type="button"
-                disabled={!pagination.has_next}
-                onClick={() => goToPage(pagination.page + 1)}
-                className="rounded-md border border-white/10 bg-white/5 px-3 py-1 text-sm text-[var(--color-ice)] transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
-          ) : null}
+          <PageNumbers
+            currentPage={pagination?.page ?? 1}
+            totalPages={pagination?.pages ?? 1}
+            onPageChange={goToPage}
+          />
         </>
       )}
     </div>

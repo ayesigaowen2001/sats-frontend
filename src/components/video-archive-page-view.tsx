@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { DataTable } from "@/components/data-table";
+import { PageNumbers } from "@/components/common/pagination";
 import { ResourceFeedback } from "@/components/resource-feedback";
 import { getSessionData } from "@/lib/auth-tokens";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
@@ -66,6 +66,148 @@ function formatDateTime(value: string): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
+function LazyClipCard({
+  clip,
+  orgId,
+}: {
+  clip: VideoClip;
+  orgId: string;
+}): React.JSX.Element {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const loadedRef = useRef(false);
+
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const [src, setSrc] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFull, setIsFull] = useState(false);
+
+  const handlePreviewTimeUpdate = (
+    event: React.SyntheticEvent<HTMLVideoElement>,
+  ) => {
+    const video = event.currentTarget;
+    if (!isFull && video.currentTime > 3) {
+      video.currentTime = 0;
+    }
+  };
+
+  const expandToFull = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (isFull) return;
+    const video = event.currentTarget;
+    setIsFull(true);
+    video.currentTime = 0;
+  };
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setShouldLoad(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!shouldLoad || loadedRef.current) return;
+    loadedRef.current = true;
+
+    let cancelled = false;
+    setIsLoading(true);
+    setError("");
+
+    clipsService
+      .getClipFileBlobUrl(orgId, clip.id)
+      .then((url) => {
+        if (!cancelled) setSrc(url);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load clip.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldLoad, orgId, clip.id]);
+
+  useEffect(() => {
+    return () => {
+      if (src) {
+        URL.revokeObjectURL(src);
+      }
+    };
+  }, [src]);
+
+  return (
+    <article
+      ref={containerRef}
+      className="overflow-hidden rounded-2xl border border-[var(--color-shell-border)]"
+    >
+      <div className="aspect-video w-full bg-black">
+        {src ? (
+          <video
+            src={src}
+            controls={isFull}
+            autoPlay
+            muted={!isFull}
+            loop={!isFull}
+            preload="metadata"
+            playsInline
+            onTimeUpdate={handlePreviewTimeUpdate}
+            onClick={expandToFull}
+            className="h-full w-full cursor-pointer object-contain"
+          />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+            {isLoading ? (
+              <p className="text-sm text-[var(--color-mist)]">
+                Loading preview…
+              </p>
+            ) : error ? (
+              <p className="text-sm text-rose-300">{error}</p>
+            ) : (
+              <p className="text-sm text-[var(--color-fog)]">
+                Scroll to preview
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="space-y-1 p-3">
+        <p className="text-sm font-semibold text-[var(--color-ice)]">
+          {clip.activityDetected || "Unlabelled clip"}
+        </p>
+        <p className="text-xs text-[var(--color-fog)]">
+          {formatDateTime(clip.recordingStartedAt)} · {clip.durationSeconds}s
+        </p>
+        <p className="text-xs text-[var(--color-fog)]">
+          Device {clip.deviceNumber || "-"}
+          {clip.animalNumber ? ` · Animal ${clip.animalNumber}` : ""}
+        </p>
+      </div>
+    </article>
+  );
+}
+
 export function VideoArchivePageView(): React.JSX.Element {
   const { user } = useAuthStore();
 
@@ -92,11 +234,6 @@ export function VideoArchivePageView(): React.JSX.Element {
   const [createError, setCreateError] = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
   const [isCreating, setIsCreating] = useState(false);
-
-  const [playingClip, setPlayingClip] = useState<VideoClip | null>(null);
-  const [streamUrl, setStreamUrl] = useState("");
-  const [streamError, setStreamError] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
 
   const [hasHydrated, setHasHydrated] = useState(false);
 
@@ -314,43 +451,6 @@ export function VideoArchivePageView(): React.JSX.Element {
     setPage(nextPage);
   };
 
-  const openClipPlayer = useCallback(
-    async (clip: VideoClip) => {
-      setPlayingClip(clip);
-      setStreamError("");
-      setStreamUrl("");
-
-      if (!activeOrgId) {
-        setStreamError("No organization selected.");
-        return;
-      }
-
-      setIsStreaming(true);
-
-      try {
-        const url = await clipsService.getClipFileBlobUrl(activeOrgId, clip.id);
-        setStreamUrl(url);
-      } catch (error) {
-        setStreamError(
-          error instanceof Error ? error.message : "Failed to stream clip.",
-        );
-      } finally {
-        setIsStreaming(false);
-      }
-    },
-    [activeOrgId],
-  );
-
-  const closeClipPlayer = () => {
-    if (streamUrl) {
-      URL.revokeObjectURL(streamUrl);
-    }
-    setStreamUrl("");
-    setStreamError("");
-    setPlayingClip(null);
-    setIsStreaming(false);
-  };
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -391,7 +491,6 @@ export function VideoArchivePageView(): React.JSX.Element {
               setCreateError("");
               setCreateSuccess("");
               setPage(1);
-              setPlayingClip(null);
             }}
             className="rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm"
           >
@@ -648,69 +747,6 @@ export function VideoArchivePageView(): React.JSX.Element {
         </form>
       ) : null}
 
-      {/* Media player */}
-      {playingClip ? (
-        <div className="rounded-2xl border border-[var(--color-shell-border)] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-[var(--color-ice)]">
-              Clip Player
-            </h3>
-            <button
-              type="button"
-              onClick={closeClipPlayer}
-              className="text-xs text-[var(--color-fog)] hover:text-[var(--color-ice)]"
-            >
-              Close
-            </button>
-          </div>
-          {isStreaming ? (
-            <p className="mt-3 text-sm text-[var(--color-mist)]">
-              Loading stream…
-            </p>
-          ) : streamError ? (
-            <p className="mt-3 text-sm text-rose-300">{streamError}</p>
-          ) : streamUrl ? (
-            <video
-              src={streamUrl}
-              controls
-              autoPlay
-              playsInline
-              className="mt-3 aspect-video w-full rounded-xl bg-black"
-            />
-          ) : (
-            <p className="mt-3 text-sm text-[var(--color-mist)]">
-              No video file available for this clip.
-            </p>
-          )}
-          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-            <p className="text-[var(--color-mist)]">
-              Device:{" "}
-              <span className="text-[var(--color-ice)]">
-                {playingClip.deviceNumber || "-"}
-              </span>
-            </p>
-            <p className="text-[var(--color-mist)]">
-              Animal:{" "}
-              <span className="text-[var(--color-ice)]">
-                {playingClip.animalNumber || "-"}
-              </span>
-            </p>
-            <p className="text-[var(--color-mist)]">
-              Started:{" "}
-              <span className="text-[var(--color-ice)]">
-                {formatDateTime(playingClip.recordingStartedAt)}
-              </span>
-            </p>
-            <p className="text-[var(--color-mist)]">
-              Duration:{" "}
-              <span className="text-[var(--color-ice)]">
-                {playingClip.durationSeconds}s
-              </span>
-            </p>
-          </div>
-        </div>
-      ) : null}
-
       {!activeOrgId ? (
         <p className="text-sm text-[var(--color-mist)]">
           Select an organization to view and manage video clips.
@@ -727,81 +763,21 @@ export function VideoArchivePageView(): React.JSX.Element {
         />
       ) : (
         <>
-          <DataTable<VideoClip>
-            columns={[
-              {
-                header: "Started",
-                render: (row) => formatDateTime(row.recordingStartedAt),
-              },
-              {
-                header: "Ended",
-                render: (row) => formatDateTime(row.recordingEndedAt),
-              },
-              {
-                header: "Device",
-                render: (row) => (
-                  <code className="text-xs font-mono text-[var(--color-fog)]">
-                    {row.deviceNumber || "-"}
-                  </code>
-                ),
-              },
-              {
-                header: "Animal",
-                render: (row) => (
-                  <code className="text-xs font-mono text-[var(--color-fog)]">
-                    {row.animalNumber || "-"}
-                  </code>
-                ),
-              },
-              {
-                header: "Duration",
-                render: (row) => `${row.durationSeconds}s`,
-              },
-              {
-                header: "Activity",
-                render: (row) => row.activityDetected || "-",
-              },
-              {
-                header: "Play",
-                render: (row) => (
-                  <button
-                    type="button"
-                    onClick={() => void openClipPlayer(row)}
-                    className="text-xs font-semibold text-[var(--color-sand)] hover:underline"
-                  >
-                    Watch
-                  </button>
-                ),
-              },
-            ]}
-            rows={rows}
-            showCard
-            horizontalScroll
-            minColumnWidthRem={10}
-          />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {rows.map((clip) => (
+              <LazyClipCard key={clip.id} clip={clip} orgId={activeOrgId} />
+            ))}
+          </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => goToPage(pagination.page - 1)}
-              disabled={!pagination.hasPrev}
-              className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <p className="text-sm text-[var(--color-mist)]">
-              Page {pagination.page} of{" "}
-              {pagination.pages > 0 ? pagination.pages : 1} · {pagination.total}{" "}
-              clips
+          <div className="flex flex-col items-center gap-2">
+            <PageNumbers
+              currentPage={pagination.page}
+              totalPages={pagination.pages > 0 ? pagination.pages : 1}
+              onPageChange={goToPage}
+            />
+            <p className="text-xs text-[var(--color-mist)]">
+              {pagination.total} clips
             </p>
-            <button
-              type="button"
-              onClick={() => goToPage(pagination.page + 1)}
-              disabled={!pagination.hasNext}
-              className="rounded-lg border border-[var(--color-sand)] bg-[var(--color-sand)]/10 px-4 py-2 text-sm font-semibold text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/20 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Next
-            </button>
           </div>
         </>
       )}

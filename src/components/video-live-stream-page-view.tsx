@@ -92,6 +92,70 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function formatTimestamp(date: Date): string {
+  const pad = (num: number) => String(num).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function formatCoordinate(
+  value: number | undefined,
+  axis: "lat" | "lng",
+): string {
+  if (value === undefined || !Number.isFinite(value)) return "--";
+
+  const absolute = Math.abs(value);
+  const direction =
+    axis === "lat" ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
+
+  return `${absolute.toFixed(6)}° ${direction}`;
+}
+
+/**
+ * Burn a legal-style strap (camera id, live timestamp, GPS) into the top of
+ * each recorded frame so exported footage carries its own provenance.
+ */
+function drawFootageOverlay(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  camera: Camera,
+): void {
+  const now = new Date();
+  const pad = (num: number) => String(num).padStart(2, "0");
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const coords = `${formatCoordinate(camera.latitude, "lat")}, ${formatCoordinate(camera.longitude, "lng")}`;
+
+  const fontSize = Math.max(14, Math.round(width / 64));
+  const lineHeight = Math.round(fontSize * 1.35);
+  const bandHeight = lineHeight * 2 + 16;
+
+  ctx.save();
+  ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.textBaseline = "top";
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(0, 0, width, bandHeight);
+
+  // Left: camera identity
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.fillText(camera.cameraName, 12, 8);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+  ctx.fillText(
+    camera.deviceNumber ? `CAM ${camera.deviceNumber}` : "",
+    12,
+    8 + lineHeight,
+  );
+
+  // Right: live timestamp + GPS
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.fillText(timestamp, width - 12, 8);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.fillText(coords, width - 12, 8 + lineHeight);
+
+  ctx.restore();
+}
+
 export function VideoLiveStreamPageView(): React.JSX.Element {
   const { user } = useAuthStore();
 
@@ -104,6 +168,8 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
   const [loadError, setLoadError] = useState("");
 
   const [settings, setSettings] = useState<DisplaySettings>(defaultSettings);
+
+  const [now, setNow] = useState<Date>(() => new Date());
 
   // ---- Recording state ---------------------------------------------------
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -157,6 +223,15 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
 
   useEffect(() => {
     setHasHydrated(true);
+  }, []);
+
+  // Live clock for the footage overlay (ticks every second).
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -385,6 +460,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
 
       const drawFrame = () => {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        drawFootageOverlay(ctx, canvas.width, cam);
         rafIdRef.current = requestAnimationFrame(drawFrame);
       };
       drawFrame();
@@ -411,18 +487,31 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
       recorder.start(250);
     } else {
       const video = videoRef.current;
-      if (!video) return;
+      const canvas = canvasRef.current;
+      if (!video || !canvas) return;
 
-      const videoStream = (
-        video as HTMLVideoElement & { captureStream(fps?: number): MediaStream }
-      ).captureStream(30);
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-      if (!videoStream) {
+      const drawFrame = () => {
+        if (video.readyState >= 2) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          drawFootageOverlay(ctx, canvas.width, cam);
+        }
+        rafIdRef.current = requestAnimationFrame(drawFrame);
+      };
+      drawFrame();
+
+      const canvasStream = canvas.captureStream(30);
+
+      if (!canvasStream) {
         setLoadError("Cannot capture video stream from this source.");
         return;
       }
 
-      const recorder = new MediaRecorder(videoStream, { mimeType });
+      const recorder = new MediaRecorder(canvasStream, { mimeType });
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
@@ -686,7 +775,29 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
             <canvas ref={canvasRef} className="hidden" aria-hidden />
 
             {selectedCamera?.streamUrl ? (
-              <div className="mt-3 overflow-hidden rounded-xl border border-white/15 bg-black/40">
+              <div className="relative mt-3 overflow-hidden rounded-xl border border-white/15 bg-black/40">
+                <div className="absolute left-0 top-0 z-10 flex w-full items-start justify-between gap-2 bg-gradient-to-b from-black/70 to-transparent p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white drop-shadow">
+                      {selectedCamera.cameraName}
+                    </p>
+                    <p className="text-xs font-mono text-white/80 drop-shadow">
+                      {selectedCamera.deviceNumber
+                        ? `CAM ${selectedCamera.deviceNumber}`
+                        : "CAMERA"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-mono text-white drop-shadow">
+                      {formatTimestamp(now)}
+                    </p>
+                    <p className="text-xs font-mono text-white/90 drop-shadow">
+                      {formatCoordinate(selectedCamera.latitude, "lat")},{" "}
+                      {formatCoordinate(selectedCamera.longitude, "lng")}
+                    </p>
+                  </div>
+                </div>
+
                 {isMjpegStream ? (
                   <img
                     ref={imgRef}
