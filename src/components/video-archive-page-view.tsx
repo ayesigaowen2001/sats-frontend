@@ -94,6 +94,9 @@ export function VideoArchivePageView(): React.JSX.Element {
   const [isCreating, setIsCreating] = useState(false);
 
   const [playingClip, setPlayingClip] = useState<VideoClip | null>(null);
+  const [streamUrl, setStreamUrl] = useState("");
+  const [streamError, setStreamError] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
 
   const [hasHydrated, setHasHydrated] = useState(false);
 
@@ -309,6 +312,43 @@ export function VideoArchivePageView(): React.JSX.Element {
   const goToPage = (nextPage: number) => {
     if (nextPage < 1) return;
     setPage(nextPage);
+  };
+
+  const openClipPlayer = useCallback(
+    async (clip: VideoClip) => {
+      setPlayingClip(clip);
+      setStreamError("");
+      setStreamUrl("");
+
+      if (!activeOrgId) {
+        setStreamError("No organization selected.");
+        return;
+      }
+
+      setIsStreaming(true);
+
+      try {
+        const url = await clipsService.getClipFileBlobUrl(activeOrgId, clip.id);
+        setStreamUrl(url);
+      } catch (error) {
+        setStreamError(
+          error instanceof Error ? error.message : "Failed to stream clip.",
+        );
+      } finally {
+        setIsStreaming(false);
+      }
+    },
+    [activeOrgId],
+  );
+
+  const closeClipPlayer = () => {
+    if (streamUrl) {
+      URL.revokeObjectURL(streamUrl);
+    }
+    setStreamUrl("");
+    setStreamError("");
+    setPlayingClip(null);
+    setIsStreaming(false);
   };
 
   return (
@@ -617,15 +657,21 @@ export function VideoArchivePageView(): React.JSX.Element {
             </h3>
             <button
               type="button"
-              onClick={() => setPlayingClip(null)}
+              onClick={closeClipPlayer}
               className="text-xs text-[var(--color-fog)] hover:text-[var(--color-ice)]"
             >
               Close
             </button>
           </div>
-          {playingClip.videoUrl ? (
+          {isStreaming ? (
+            <p className="mt-3 text-sm text-[var(--color-mist)]">
+              Loading stream…
+            </p>
+          ) : streamError ? (
+            <p className="mt-3 text-sm text-rose-300">{streamError}</p>
+          ) : streamUrl ? (
             <video
-              src={playingClip.videoUrl}
+              src={streamUrl}
               controls
               autoPlay
               playsInline
@@ -720,7 +766,7 @@ export function VideoArchivePageView(): React.JSX.Element {
                 render: (row) => (
                   <button
                     type="button"
-                    onClick={() => setPlayingClip(row)}
+                    onClick={() => void openClipPlayer(row)}
                     className="text-xs font-semibold text-[var(--color-sand)] hover:underline"
                   >
                     Watch

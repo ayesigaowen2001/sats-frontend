@@ -271,6 +271,36 @@ export class ClipsService {
     };
   }
 
+  async getClipFileBlobUrl(orgId: string, clipId: string): Promise<string> {
+    const headers = new Headers();
+
+    const accessToken = getAccessToken();
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    const response = await fetch(
+      `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/clips/${encodeURIComponent(clipId)}/file`,
+      {
+        method: "GET",
+        headers,
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        await getApiErrorMessage(
+          response,
+          `Failed to stream clip: ${response.status}`,
+        ),
+      );
+    }
+
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  }
+
   async uploadClip(
     orgId: string,
     input: ClipUploadInput,
