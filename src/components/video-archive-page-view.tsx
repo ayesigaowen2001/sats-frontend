@@ -2,15 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ResourceRowActions } from "@/components/common/resource-row-actions";
 import { DataTable } from "@/components/data-table";
 import { ResourceFeedback } from "@/components/resource-feedback";
 import { getSessionData } from "@/lib/auth-tokens";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
 import {
   clipsService,
+  type ClipListFilters,
   type VideoClip,
-  type VideoClipInput,
 } from "@/lib/video/clips-service";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -20,61 +19,51 @@ interface OrganizationOption {
 }
 
 interface ClipFormValues extends Record<string, string> {
-  camera_id: string;
-  animal_id: string;
-  timestamp: string;
-  video_path: string;
+  device_number: string;
+  animal_number: string;
+  recording_started_at: string;
+  recording_ended_at: string;
   activity_detected: string;
-  duration_seconds: string;
+}
+
+interface FilterFormValues {
+  device_number: string;
+  animal_number: string;
+  activity: string;
+  recorded_from: string;
+  recorded_to: string;
 }
 
 const defaultValues: ClipFormValues = {
-  camera_id: "",
-  animal_id: "",
-  timestamp: "",
-  video_path: "",
+  device_number: "",
+  animal_number: "",
+  recording_started_at: "",
+  recording_ended_at: "",
   activity_detected: "",
-  duration_seconds: "",
 };
 
-function isValidUuid(value: string): boolean {
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(value);
-}
+const defaultFilterValues: FilterFormValues = {
+  device_number: "",
+  animal_number: "",
+  activity: "",
+  recorded_from: "",
+  recorded_to: "",
+};
 
-function toPayload(values: ClipFormValues): VideoClipInput {
-  return {
-    camera_id: values.camera_id.trim(),
-    animal_id: values.animal_id.trim(),
-    timestamp: values.timestamp,
-    video_path: values.video_path.trim(),
-    activity_detected: values.activity_detected.trim(),
-    duration_seconds: Number(values.duration_seconds || 0),
-  };
-}
-
-function fromClip(clip: VideoClip): ClipFormValues {
-  return {
-    camera_id: clip.cameraId,
-    animal_id: clip.animalId,
-    timestamp: clip.timestamp ? clip.timestamp.slice(0, 16) : "",
-    video_path: clip.videoPath,
-    activity_detected: clip.activityDetected,
-    duration_seconds: String(clip.durationSeconds),
-  };
-}
-
-function asDatetimeLocalValue(value: string): string {
-  if (!value) return "";
+function toIsoDateTime(value: string): string {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return value.slice(0, 16);
+    throw new Error("Invalid date-time value.");
   }
 
-  const pad = (num: number) => String(num).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return date.toISOString();
+}
+
+function formatDateTime(value: string): string {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
 export function VideoArchivePageView(): React.JSX.Element {
@@ -86,6 +75,16 @@ export function VideoArchivePageView(): React.JSX.Element {
   const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState("");
 
+  const [filters, setFilters] = useState<FilterFormValues>(defaultFilterValues);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    pages: 0,
+    page: 1,
+    hasNext: false,
+    hasPrev: false,
+  });
+
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createValues, setCreateValues] =
     useState<ClipFormValues>(defaultValues);
@@ -94,17 +93,10 @@ export function VideoArchivePageView(): React.JSX.Element {
   const [createSuccess, setCreateSuccess] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
-  const [editingClip, setEditingClip] = useState<VideoClip | null>(null);
-  const [updateValues, setUpdateValues] =
-    useState<ClipFormValues>(defaultValues);
-  const [updateFile, setUpdateFile] = useState<File | null>(null);
-  const [updateError, setUpdateError] = useState("");
-  const [updateSuccess, setUpdateSuccess] = useState("");
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  const [deletingClipId, setDeletingClipId] = useState("");
-  const [deleteError, setDeleteError] = useState("");
-  const [deleteSuccess, setDeleteSuccess] = useState("");
+  const [playingClip, setPlayingClip] = useState<VideoClip | null>(null);
+  const [streamUrl, setStreamUrl] = useState("");
+  const [streamError, setStreamError] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
 
   const [hasHydrated, setHasHydrated] = useState(false);
 
@@ -122,23 +114,31 @@ export function VideoArchivePageView(): React.JSX.Element {
     return selectedOrgId;
   }, [isSystemAdmin, selectedOrgId, user?.organizationId]);
 
-  const clearActionMessages = () => {
-    setCreateError("");
-    setCreateSuccess("");
-    setUpdateError("");
-    setUpdateSuccess("");
-    setDeleteError("");
-    setDeleteSuccess("");
-  };
+  const loadClips = useCallback(
+    async (orgId: string) => {
+      if (!orgId) {
+        setRows([]);
+        return;
+      }
 
-  const loadClips = useCallback(async (orgId: string) => {
-    if (!orgId) {
-      setRows([]);
-      return [];
-    }
+      const appliedFilters: ClipListFilters = {
+        device_number: filters.device_number.trim() || null,
+        animal_number: filters.animal_number.trim() || null,
+        activity: filters.activity.trim() || null,
+        recorded_from: filters.recorded_from
+          ? new Date(filters.recorded_from).toISOString()
+          : null,
+        recorded_to: filters.recorded_to
+          ? new Date(filters.recorded_to).toISOString()
+          : null,
+        page,
+        per_page: 20,
+      };
 
-    return clipsService.listClips(orgId);
-  }, []);
+      return clipsService.listClips(orgId, appliedFilters);
+    },
+    [filters, page],
+  );
 
   useEffect(() => {
     setHasHydrated(true);
@@ -193,11 +193,18 @@ export function VideoArchivePageView(): React.JSX.Element {
       setLoadError("");
 
       try {
-        const clips = await loadClips(activeOrgId);
+        const result = await loadClips(activeOrgId);
 
-        if (isMounted) {
-          setRows(clips);
-        }
+        if (!isMounted || !result) return;
+
+        setRows(result.items);
+        setPagination({
+          total: result.pagination.total,
+          pages: result.pagination.pages,
+          page: result.pagination.page,
+          hasNext: result.pagination.hasNext,
+          hasPrev: result.pagination.hasPrev,
+        });
       } catch (requestError) {
         if (isMounted) {
           setRows([]);
@@ -217,43 +224,6 @@ export function VideoArchivePageView(): React.JSX.Element {
     };
   }, [activeOrgId, loadClips]);
 
-  const validateForm = (values: ClipFormValues): string | null => {
-    if (!values.camera_id.trim()) {
-      return "Camera ID is required.";
-    }
-
-    if (!isValidUuid(values.camera_id)) {
-      return "Camera ID must be a valid UUID.";
-    }
-
-    if (!values.animal_id.trim()) {
-      return "Animal ID is required.";
-    }
-
-    if (!isValidUuid(values.animal_id)) {
-      return "Animal ID must be a valid UUID.";
-    }
-
-    if (!values.timestamp) {
-      return "Timestamp is required.";
-    }
-
-    if (!values.video_path.trim()) {
-      return "Video path is required.";
-    }
-
-    if (!values.activity_detected.trim()) {
-      return "Activity detected is required.";
-    }
-
-    const duration = Number(values.duration_seconds);
-    if (!Number.isFinite(duration) || duration < 0) {
-      return "Duration seconds must be a valid number greater than or equal to 0.";
-    }
-
-    return null;
-  };
-
   const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -262,10 +232,26 @@ export function VideoArchivePageView(): React.JSX.Element {
       return;
     }
 
-    const validationMessage = validateForm(createValues);
+    if (!createValues.device_number.trim()) {
+      setCreateError("Device number is required.");
+      return;
+    }
 
-    if (validationMessage) {
-      setCreateError(validationMessage);
+    if (!createFile) {
+      setCreateError("A video file is required.");
+      return;
+    }
+
+    let recordingStartedAt: string;
+    let recordingEndedAt: string;
+
+    try {
+      recordingStartedAt = toIsoDateTime(createValues.recording_started_at);
+      recordingEndedAt = toIsoDateTime(createValues.recording_ended_at);
+    } catch {
+      setCreateError(
+        "Recording start and end times must be valid date-time values.",
+      );
       return;
     }
 
@@ -274,170 +260,96 @@ export function VideoArchivePageView(): React.JSX.Element {
     setIsCreating(true);
 
     try {
-      const payload = toPayload(createValues);
+      await clipsService.uploadClip(
+        activeOrgId,
+        {
+          device_number: createValues.device_number.trim(),
+          animal_number: createValues.animal_number.trim() || null,
+          recording_started_at: recordingStartedAt,
+          recording_ended_at: recordingEndedAt,
+          activity_detected: createValues.activity_detected.trim() || null,
+        },
+        createFile,
+      );
 
-      if (createFile) {
-        await clipsService.createClipWithFile(activeOrgId, payload, createFile);
-      } else {
-        await clipsService.createClip(activeOrgId, payload);
-      }
-
-      setCreateSuccess("Video clip created successfully.");
+      setCreateSuccess("Video clip uploaded successfully.");
       setCreateValues(defaultValues);
       setCreateFile(null);
       setShowCreateForm(false);
 
-      const updated = await loadClips(activeOrgId);
-      setRows(updated);
+      const result = await loadClips(activeOrgId);
+      if (result) {
+        setRows(result.items);
+        setPagination({
+          total: result.pagination.total,
+          pages: result.pagination.pages,
+          page: result.pagination.page,
+          hasNext: result.pagination.hasNext,
+          hasPrev: result.pagination.hasPrev,
+        });
+      }
     } catch (requestError) {
       setCreateError(
         requestError instanceof Error
           ? requestError.message
-          : "Failed to create video clip.",
+          : "Failed to upload video clip.",
       );
     } finally {
       setIsCreating(false);
     }
   };
 
-  const handleEditClick = (clip: VideoClip) => {
-    clearActionMessages();
-    setShowCreateForm(false);
-    setEditingClip(clip);
-    setUpdateValues({
-      ...fromClip(clip),
-      timestamp: asDatetimeLocalValue(clip.timestamp),
-    });
-    setUpdateFile(null);
+  const applyFilters = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPage(1);
   };
 
-  const handleUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const resetFilters = () => {
+    setFilters(defaultFilterValues);
+    setPage(1);
+  };
 
-    if (!activeOrgId || !editingClip) {
-      setUpdateError("No clip selected.");
-      return;
-    }
+  const goToPage = (nextPage: number) => {
+    if (nextPage < 1) return;
+    setPage(nextPage);
+  };
 
-    const validationMessage = validateForm(updateValues);
+  const openClipPlayer = useCallback(
+    async (clip: VideoClip) => {
+      setPlayingClip(clip);
+      setStreamError("");
+      setStreamUrl("");
 
-    if (validationMessage) {
-      setUpdateError(validationMessage);
-      return;
-    }
-
-    setUpdateError("");
-    setUpdateSuccess("");
-    setIsUpdating(true);
-
-    try {
-      const payload = toPayload(updateValues);
-
-      if (updateFile) {
-        await clipsService.updateClipWithFile(
-          activeOrgId,
-          editingClip.id,
-          payload,
-          updateFile,
-        );
-      } else {
-        await clipsService.updateClip(activeOrgId, editingClip.id, payload);
+      if (!activeOrgId) {
+        setStreamError("No organization selected.");
+        return;
       }
 
-      setUpdateSuccess("Video clip updated successfully.");
-      setEditingClip(null);
-      setUpdateValues(defaultValues);
-      setUpdateFile(null);
+      setIsStreaming(true);
 
-      const updated = await loadClips(activeOrgId);
-      setRows(updated);
-    } catch (requestError) {
-      setUpdateError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Failed to update video clip.",
-      );
-    } finally {
-      setIsUpdating(false);
+      try {
+        const url = await clipsService.getClipFileBlobUrl(activeOrgId, clip.id);
+        setStreamUrl(url);
+      } catch (error) {
+        setStreamError(
+          error instanceof Error ? error.message : "Failed to stream clip.",
+        );
+      } finally {
+        setIsStreaming(false);
+      }
+    },
+    [activeOrgId],
+  );
+
+  const closeClipPlayer = () => {
+    if (streamUrl) {
+      URL.revokeObjectURL(streamUrl);
     }
+    setStreamUrl("");
+    setStreamError("");
+    setPlayingClip(null);
+    setIsStreaming(false);
   };
-
-  const handleDeleteClick = (clipId: string) => {
-    setDeletingClipId(clipId);
-    setDeleteError("");
-    setDeleteSuccess("");
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!activeOrgId || !deletingClipId) {
-      setDeleteError("No clip selected.");
-      return;
-    }
-
-    setDeleteError("");
-    setDeleteSuccess("");
-
-    try {
-      await clipsService.deleteClip(activeOrgId, deletingClipId);
-      setDeletingClipId("");
-      setDeleteSuccess("Video clip deleted successfully.");
-
-      const updated = await loadClips(activeOrgId);
-      setRows(updated);
-    } catch (requestError) {
-      setDeleteError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Failed to delete video clip.",
-      );
-    }
-  };
-
-  const handleCancelDelete = () => {
-    setDeletingClipId("");
-    setDeleteError("");
-  };
-
-  if (deletingClipId) {
-    const clip = rows?.find((item) => item.id === deletingClipId);
-
-    return (
-      <div className="flex flex-col gap-6">
-        <div className="rounded-2xl border border-rose-300/30 bg-rose-500/10 p-6">
-          <h3 className="mb-3 text-lg font-semibold text-rose-100">
-            Delete Clip
-          </h3>
-          <p className="mb-4 text-sm text-rose-100/80">
-            Are you sure you want to delete this video clip?
-          </p>
-          {clip ? (
-            <p className="mb-4 text-sm font-mono text-white/70">
-              {clip.videoPath}
-            </p>
-          ) : null}
-          {deleteError ? (
-            <p className="mb-3 text-sm text-rose-200">{deleteError}</p>
-          ) : null}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={handleConfirmDelete}
-              className="rounded-lg border border-rose-300 bg-rose-500/20 px-4 py-2 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30"
-            >
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={handleCancelDelete}
-              className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -449,16 +361,15 @@ export function VideoArchivePageView(): React.JSX.Element {
           <button
             type="button"
             onClick={() => {
-              clearActionMessages();
-              setEditingClip(null);
-              setUpdateFile(null);
+              setCreateError("");
+              setCreateSuccess("");
               setCreateValues(defaultValues);
               setCreateFile(null);
               setShowCreateForm(true);
             }}
             className="rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/28"
           >
-            Create video clip
+            Upload video clip
           </button>
         ) : null}
       </div>
@@ -476,10 +387,11 @@ export function VideoArchivePageView(): React.JSX.Element {
             value={selectedOrgId}
             onChange={(event) => {
               setSelectedOrgId(event.target.value);
-              setEditingClip(null);
-              setUpdateFile(null);
               setShowCreateForm(false);
-              clearActionMessages();
+              setCreateError("");
+              setCreateSuccess("");
+              setPage(1);
+              setPlayingClip(null);
             }}
             className="rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm"
           >
@@ -502,13 +414,14 @@ export function VideoArchivePageView(): React.JSX.Element {
         >
           <div className="sm:col-span-2 flex items-center justify-between gap-2">
             <h3 className="text-base font-semibold text-[var(--color-ice)]">
-              Create video clip
+              Upload video clip
             </h3>
             <button
               type="button"
               onClick={() => {
                 setShowCreateForm(false);
-                clearActionMessages();
+                setCreateError("");
+                setCreateSuccess("");
               }}
               className="text-xs text-[var(--color-fog)] hover:text-[var(--color-ice)]"
             >
@@ -518,54 +431,53 @@ export function VideoArchivePageView(): React.JSX.Element {
 
           <label className="block">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Camera ID
+              Device number
             </span>
             <input
               required
               type="text"
-              value={createValues.camera_id}
+              value={createValues.device_number}
               onChange={(event) =>
                 setCreateValues((prev) => ({
                   ...prev,
-                  camera_id: event.target.value,
+                  device_number: event.target.value,
                 }))
               }
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-              placeholder="Camera UUID"
+              placeholder="e.g. DEV-00001"
             />
           </label>
 
           <label className="block">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Animal ID
+              Animal number (optional)
             </span>
             <input
-              required
               type="text"
-              value={createValues.animal_id}
+              value={createValues.animal_number}
               onChange={(event) =>
                 setCreateValues((prev) => ({
                   ...prev,
-                  animal_id: event.target.value,
+                  animal_number: event.target.value,
                 }))
               }
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-              placeholder="Animal UUID"
+              placeholder="e.g. ANM-00001"
             />
           </label>
 
           <label className="block">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Timestamp
+              Recording started at
             </span>
             <input
               required
               type="datetime-local"
-              value={createValues.timestamp}
+              value={createValues.recording_started_at}
               onChange={(event) =>
                 setCreateValues((prev) => ({
                   ...prev,
-                  timestamp: event.target.value,
+                  recording_started_at: event.target.value,
                 }))
               }
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
@@ -574,73 +486,45 @@ export function VideoArchivePageView(): React.JSX.Element {
 
           <label className="block">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Duration (seconds)
+              Recording ended at
             </span>
             <input
               required
-              type="number"
-              min={0}
-              value={createValues.duration_seconds}
+              type="datetime-local"
+              value={createValues.recording_ended_at}
               onChange={(event) =>
                 setCreateValues((prev) => ({
                   ...prev,
-                  duration_seconds: event.target.value,
+                  recording_ended_at: event.target.value,
                 }))
               }
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-              placeholder="e.g. 45"
             />
           </label>
 
           <label className="block sm:col-span-2">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Video path
+              Video file
             </span>
             <input
               required
-              type="text"
-              value={createValues.video_path}
-              onChange={(event) =>
-                setCreateValues((prev) => ({
-                  ...prev,
-                  video_path: event.target.value,
-                }))
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-              placeholder="/clips/patrol/day-1.mp4"
-            />
-          </label>
-
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Upload local video file (optional)
-            </span>
-            <input
               type="file"
-              accept="video/*"
+              accept="video/mp4,video/quicktime,video/x-matroska,video/webm,video/mpeg"
               onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setCreateFile(file);
-                if (file) {
-                  setCreateValues((prev) => ({
-                    ...prev,
-                    video_path: prev.video_path || file.name,
-                  }));
-                }
+                setCreateFile(event.target.files?.[0] ?? null);
               }}
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 file:mr-4 file:rounded-md file:border-0 file:bg-[var(--color-sand)]/20 file:px-3 file:py-1 file:text-sm file:font-semibold"
             />
             <p className="mt-1 text-xs text-[var(--color-fog)]">
-              If selected, the file is sent as multipart to the same endpoint.
+              MP4, MOV, MKV, WebM or MPEG (max 200 MB).
             </p>
           </label>
 
           <label className="block sm:col-span-2">
             <span className="text-sm font-medium text-[var(--color-ice)]">
-              Activity detected
+              Activity detected (optional)
             </span>
             <input
-              required
               type="text"
               value={createValues.activity_detected}
               onChange={(event) =>
@@ -651,6 +535,7 @@ export function VideoArchivePageView(): React.JSX.Element {
               }
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
               placeholder="e.g. Elephant crossing"
+              maxLength={500}
             />
           </label>
 
@@ -668,182 +553,162 @@ export function VideoArchivePageView(): React.JSX.Element {
               disabled={isCreating}
               className="rounded-lg border border-[var(--color-sand)] bg-[var(--color-sand)]/10 px-4 py-2 text-sm font-semibold text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isCreating ? "Creating..." : "Create"}
+              {isCreating ? "Uploading..." : "Upload"}
             </button>
           </div>
         </form>
       ) : null}
 
-      {editingClip ? (
+      {/* Filters */}
+      {activeOrgId ? (
         <form
-          onSubmit={handleUpdate}
-          className="grid gap-4 rounded-2xl border border-[var(--color-shell-border)] p-4 sm:grid-cols-2"
+          onSubmit={applyFilters}
+          className="grid gap-3 rounded-2xl border border-[var(--color-shell-border)] p-4 sm:grid-cols-2 lg:grid-cols-5"
         >
-          <div className="sm:col-span-2 flex items-center justify-between gap-2">
+          <input
+            type="text"
+            value={filters.device_number}
+            onChange={(event) =>
+              setFilters((prev) => ({
+                ...prev,
+                device_number: event.target.value,
+              }))
+            }
+            placeholder="Device number"
+            className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm"
+          />
+          <input
+            type="text"
+            value={filters.animal_number}
+            onChange={(event) =>
+              setFilters((prev) => ({
+                ...prev,
+                animal_number: event.target.value,
+              }))
+            }
+            placeholder="Animal number"
+            className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm"
+          />
+          <input
+            type="text"
+            value={filters.activity}
+            onChange={(event) =>
+              setFilters((prev) => ({
+                ...prev,
+                activity: event.target.value,
+              }))
+            }
+            placeholder="Activity"
+            className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm"
+          />
+          <label className="flex flex-col text-xs text-[var(--color-fog)]">
+            Recorded from
+            <input
+              type="datetime-local"
+              value={filters.recorded_from}
+              onChange={(event) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  recorded_from: event.target.value,
+                }))
+              }
+              className="mt-1 rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="flex flex-col text-xs text-[var(--color-fog)]">
+            Recorded to
+            <input
+              type="datetime-local"
+              value={filters.recorded_to}
+              onChange={(event) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  recorded_to: event.target.value,
+                }))
+              }
+              className="mt-1 rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm"
+            />
+          </label>
+
+          <div className="flex gap-2 sm:col-span-2 lg:col-span-5">
+            <button
+              type="submit"
+              className="rounded-lg border border-[var(--color-sand)] bg-[var(--color-sand)]/10 px-4 py-2 text-sm font-semibold text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/20"
+            >
+              Apply filters
+            </button>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20"
+            >
+              Reset
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      {/* Media player */}
+      {playingClip ? (
+        <div className="rounded-2xl border border-[var(--color-shell-border)] p-4">
+          <div className="flex items-center justify-between gap-3">
             <h3 className="text-base font-semibold text-[var(--color-ice)]">
-              Update video clip
+              Clip Player
             </h3>
             <button
               type="button"
-              onClick={() => {
-                setEditingClip(null);
-                setUpdateFile(null);
-                clearActionMessages();
-              }}
+              onClick={closeClipPlayer}
               className="text-xs text-[var(--color-fog)] hover:text-[var(--color-ice)]"
             >
               Close
             </button>
           </div>
-
-          <label className="block">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Camera ID
-            </span>
-            <input
-              required
-              type="text"
-              value={updateValues.camera_id}
-              onChange={(event) =>
-                setUpdateValues((prev) => ({
-                  ...prev,
-                  camera_id: event.target.value,
-                }))
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
+          {isStreaming ? (
+            <p className="mt-3 text-sm text-[var(--color-mist)]">
+              Loading stream…
+            </p>
+          ) : streamError ? (
+            <p className="mt-3 text-sm text-rose-300">{streamError}</p>
+          ) : streamUrl ? (
+            <video
+              src={streamUrl}
+              controls
+              autoPlay
+              playsInline
+              className="mt-3 aspect-video w-full rounded-xl bg-black"
             />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Animal ID
-            </span>
-            <input
-              required
-              type="text"
-              value={updateValues.animal_id}
-              onChange={(event) =>
-                setUpdateValues((prev) => ({
-                  ...prev,
-                  animal_id: event.target.value,
-                }))
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Timestamp
-            </span>
-            <input
-              required
-              type="datetime-local"
-              value={updateValues.timestamp}
-              onChange={(event) =>
-                setUpdateValues((prev) => ({
-                  ...prev,
-                  timestamp: event.target.value,
-                }))
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Duration (seconds)
-            </span>
-            <input
-              required
-              type="number"
-              min={0}
-              value={updateValues.duration_seconds}
-              onChange={(event) =>
-                setUpdateValues((prev) => ({
-                  ...prev,
-                  duration_seconds: event.target.value,
-                }))
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-            />
-          </label>
-
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Video path
-            </span>
-            <input
-              required
-              type="text"
-              value={updateValues.video_path}
-              onChange={(event) =>
-                setUpdateValues((prev) => ({
-                  ...prev,
-                  video_path: event.target.value,
-                }))
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-            />
-          </label>
-
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Replace with local video file (optional)
-            </span>
-            <input
-              type="file"
-              accept="video/*"
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setUpdateFile(file);
-                if (file) {
-                  setUpdateValues((prev) => ({
-                    ...prev,
-                    video_path: prev.video_path || file.name,
-                  }));
-                }
-              }}
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 file:mr-4 file:rounded-md file:border-0 file:bg-[var(--color-sand)]/20 file:px-3 file:py-1 file:text-sm file:font-semibold"
-            />
-          </label>
-
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Activity detected
-            </span>
-            <input
-              required
-              type="text"
-              value={updateValues.activity_detected}
-              onChange={(event) =>
-                setUpdateValues((prev) => ({
-                  ...prev,
-                  activity_detected: event.target.value,
-                }))
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-            />
-          </label>
-
-          <div className="sm:col-span-2 flex items-center justify-between gap-2">
-            <div>
-              {updateError ? (
-                <p className="text-sm text-rose-300">{updateError}</p>
-              ) : null}
-              {updateSuccess ? (
-                <p className="text-sm text-emerald-300">{updateSuccess}</p>
-              ) : null}
-            </div>
-            <button
-              type="submit"
-              disabled={isUpdating}
-              className="rounded-lg border border-[var(--color-sand)] bg-[var(--color-sand)]/10 px-4 py-2 text-sm font-semibold text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isUpdating ? "Updating..." : "Update"}
-            </button>
+          ) : (
+            <p className="mt-3 text-sm text-[var(--color-mist)]">
+              No video file available for this clip.
+            </p>
+          )}
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <p className="text-[var(--color-mist)]">
+              Device:{" "}
+              <span className="text-[var(--color-ice)]">
+                {playingClip.deviceNumber || "-"}
+              </span>
+            </p>
+            <p className="text-[var(--color-mist)]">
+              Animal:{" "}
+              <span className="text-[var(--color-ice)]">
+                {playingClip.animalNumber || "-"}
+              </span>
+            </p>
+            <p className="text-[var(--color-mist)]">
+              Started:{" "}
+              <span className="text-[var(--color-ice)]">
+                {formatDateTime(playingClip.recordingStartedAt)}
+              </span>
+            </p>
+            <p className="text-[var(--color-mist)]">
+              Duration:{" "}
+              <span className="text-[var(--color-ice)]">
+                {playingClip.durationSeconds}s
+              </span>
+            </p>
           </div>
-        </form>
+        </div>
       ) : null}
 
       {!activeOrgId ? (
@@ -858,72 +723,88 @@ export function VideoArchivePageView(): React.JSX.Element {
       ) : rows.length === 0 ? (
         <ResourceFeedback
           title="No clips found"
-          detail="Create a new video clip to populate this archive."
+          detail="Upload a video clip to populate this archive."
         />
       ) : (
-        <DataTable<VideoClip>
-          columns={[
-            {
-              header: "Timestamp",
-              render: (row) => {
-                const parsed = new Date(row.timestamp);
-                return Number.isNaN(parsed.getTime())
-                  ? row.timestamp
-                  : parsed.toLocaleString();
+        <>
+          <DataTable<VideoClip>
+            columns={[
+              {
+                header: "Started",
+                render: (row) => formatDateTime(row.recordingStartedAt),
               },
-            },
-            {
-              header: "Camera",
-              render: (row) => (
-                <code className="text-xs font-mono text-[var(--color-fog)]">
-                  {row.cameraId.slice(0, 8)}...
-                </code>
-              ),
-            },
-            {
-              header: "Animal",
-              render: (row) => (
-                <code className="text-xs font-mono text-[var(--color-fog)]">
-                  {row.animalId.slice(0, 8)}...
-                </code>
-              ),
-            },
-            {
-              header: "Activity",
-              render: (row) => row.activityDetected || "-",
-            },
-            {
-              header: "Duration",
-              render: (row) => `${row.durationSeconds}s`,
-            },
-            {
-              header: "Video Path",
-              render: (row) => row.videoPath,
-            },
-            {
-              header: "Actions",
-              render: (row) => (
-                <ResourceRowActions
-                  onEdit={() => handleEditClick(row)}
-                  onDelete={() => handleDeleteClick(row.id)}
-                  isDeleting={deletingClipId === row.id}
-                />
-              ),
-            },
-          ]}
-          rows={rows}
-          showCard
-          horizontalScroll
-          minColumnWidthRem={10}
-        />
-      )}
+              {
+                header: "Ended",
+                render: (row) => formatDateTime(row.recordingEndedAt),
+              },
+              {
+                header: "Device",
+                render: (row) => (
+                  <code className="text-xs font-mono text-[var(--color-fog)]">
+                    {row.deviceNumber || "-"}
+                  </code>
+                ),
+              },
+              {
+                header: "Animal",
+                render: (row) => (
+                  <code className="text-xs font-mono text-[var(--color-fog)]">
+                    {row.animalNumber || "-"}
+                  </code>
+                ),
+              },
+              {
+                header: "Duration",
+                render: (row) => `${row.durationSeconds}s`,
+              },
+              {
+                header: "Activity",
+                render: (row) => row.activityDetected || "-",
+              },
+              {
+                header: "Play",
+                render: (row) => (
+                  <button
+                    type="button"
+                    onClick={() => void openClipPlayer(row)}
+                    className="text-xs font-semibold text-[var(--color-sand)] hover:underline"
+                  >
+                    Watch
+                  </button>
+                ),
+              },
+            ]}
+            rows={rows}
+            showCard
+            horizontalScroll
+            minColumnWidthRem={10}
+          />
 
-      {deleteError ? (
-        <p className="text-sm text-rose-300">{deleteError}</p>
-      ) : null}
-      {deleteSuccess ? (
-        <p className="text-sm text-emerald-300">{deleteSuccess}</p>
-      ) : null}
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => goToPage(pagination.page - 1)}
+              disabled={!pagination.hasPrev}
+              className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <p className="text-sm text-[var(--color-mist)]">
+              Page {pagination.page} of{" "}
+              {pagination.pages > 0 ? pagination.pages : 1} · {pagination.total}{" "}
+              clips
+            </p>
+            <button
+              type="button"
+              onClick={() => goToPage(pagination.page + 1)}
+              disabled={!pagination.hasNext}
+              className="rounded-lg border border-[var(--color-sand)] bg-[var(--color-sand)]/10 px-4 py-2 text-sm font-semibold text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/20 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

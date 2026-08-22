@@ -10,7 +10,8 @@ interface ApiErrorPayload {
 interface CameraApiModel {
   camera_id?: string;
   id?: string;
-  device_id: string;
+  device_id?: string;
+  device_number?: string;
   camera_name: string;
   stream_url?: string;
   camera_type?: string;
@@ -33,7 +34,7 @@ interface CameraApiModel {
 
 export interface Camera {
   id: string;
-  deviceId: string;
+  deviceNumber: string;
   cameraName: string;
   streamUrl: string;
   latitude?: number;
@@ -46,7 +47,7 @@ export interface Camera {
 }
 
 export interface CameraInput {
-  device_id: string;
+  device_number: string;
   camera_name: string;
   stream_url: string;
   geo_coordinates?: {
@@ -78,7 +79,7 @@ function mapCamera(item: CameraApiModel): Camera {
 
   return {
     id: String(item.camera_id ?? item.id ?? ""),
-    deviceId: item.device_id,
+    deviceNumber: item.device_number ?? item.device_id ?? "",
     cameraName: item.camera_name,
     streamUrl: item.stream_url ?? item.camera_type ?? "",
     latitude:
@@ -146,7 +147,7 @@ async function getApiErrorMessage(
 }
 
 export class CamerasService {
-  private createHeaders(includeJson = true, organizationId?: string) {
+  private createHeaders(includeJson = true) {
     const headers = new Headers({
       Accept: "application/json",
     });
@@ -159,10 +160,6 @@ export class CamerasService {
 
     if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
-    }
-
-    if (organizationId) {
-      headers.set("organization_id", organizationId);
     }
 
     return headers;
@@ -219,7 +216,7 @@ export class CamerasService {
       `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/cameras`,
       {
         method: "POST",
-        headers: this.createHeaders(true, orgId),
+        headers: this.createHeaders(true),
         body: JSON.stringify(input),
       },
     );
@@ -243,7 +240,7 @@ export class CamerasService {
       `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/cameras/${encodeURIComponent(cameraId)}`,
       {
         method: "PATCH",
-        headers: this.createHeaders(true, orgId),
+        headers: this.createHeaders(true),
         body: JSON.stringify(input),
       },
     );
@@ -263,7 +260,7 @@ export class CamerasService {
       `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/cameras/${encodeURIComponent(cameraId)}`,
       {
         method: "DELETE",
-        headers: this.createHeaders(false, orgId),
+        headers: this.createHeaders(false),
       },
     );
 

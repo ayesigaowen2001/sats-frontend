@@ -11,7 +11,8 @@ interface DeviceApiModel {
   id: string | number;
   category_id: string | number;
   spec_id: string | number;
-  device_serial: string;
+  device_serial?: string;
+  device_number?: string;
   firmware_version: string;
   status: string;
   last_seen: string;
@@ -23,10 +24,15 @@ export interface DeviceRecord {
   categoryId: number;
   specId: number;
   deviceSerial: string;
+  deviceNumber: string;
   firmwareVersion: string;
   status: string;
   lastSeen: string;
   organizationId: string | null;
+}
+
+function toDeviceNumber(item: DeviceApiModel): string {
+  return item.device_number ?? item.device_serial ?? "";
 }
 
 export interface DeviceInput {
@@ -48,11 +54,14 @@ export interface OrganizationDeviceListFilters {
 }
 
 function mapDevice(item: DeviceApiModel): DeviceRecord {
+  const deviceNumber = toDeviceNumber(item);
+
   return {
     id: String(item.id),
     categoryId: Number(item.category_id),
     specId: Number(item.spec_id),
-    deviceSerial: item.device_serial,
+    deviceSerial: item.device_serial ?? deviceNumber,
+    deviceNumber,
     firmwareVersion: item.firmware_version,
     status: item.status,
     lastSeen: item.last_seen,
