@@ -24,6 +24,7 @@ export function AnimalsPageView() {
       <ResourceFeedback
         title="Loading animal registry"
         detail="The animal management route is hydrating its registry and classification data from the SATS backend."
+        loading
       />
     );
   }

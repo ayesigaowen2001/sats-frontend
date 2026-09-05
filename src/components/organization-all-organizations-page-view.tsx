@@ -274,6 +274,7 @@ export function OrganizationAllOrganizationsPageView() {
       <ResourceFeedback
         title="Loading organizations"
         detail="Fetching all organizations from SATS services."
+        loading
       />
     );
   }

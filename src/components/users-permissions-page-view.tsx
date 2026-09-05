@@ -485,6 +485,7 @@ export function UsersPermissionsPageView() {
       <ResourceFeedback
         title="Loading permissions"
         detail="Fetching permissions catalog from SATS services."
+        loading
       />
     );
   }

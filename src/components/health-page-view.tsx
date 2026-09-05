@@ -24,6 +24,7 @@ export function HealthPageView() {
       <ResourceFeedback
         title="Loading health intelligence"
         detail="The health module is loading active cases, anomaly trends, and biometric monitoring summaries."
+        loading
       />
     );
   }

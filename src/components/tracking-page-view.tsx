@@ -26,6 +26,7 @@ export function TrackingPageView() {
       <ResourceFeedback
         title="Loading tracking telemetry"
         detail="The tracking module is requesting live route data from the SATS tracking endpoint."
+        loading
       />
     );
   }

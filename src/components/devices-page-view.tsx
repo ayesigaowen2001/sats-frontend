@@ -24,6 +24,7 @@ export function DevicesPageView() {
       <ResourceFeedback
         title="Loading device fleet"
         detail="The device management route is requesting fleet, firmware, and sensor capability data from SATS services."
+        loading
       />
     );
   }

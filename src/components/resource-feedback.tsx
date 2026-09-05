@@ -1,6 +1,8 @@
 interface ResourceFeedbackTitleDetailProps {
   title: string;
   detail: string;
+  /** When true, renders a loading spinner alongside the message. */
+  loading?: boolean;
 }
 
 interface ResourceFeedbackStateProps {
@@ -19,6 +21,10 @@ function isStateProps(
 }
 
 export function ResourceFeedback(props: ResourceFeedbackProps) {
+  const isLoading = isStateProps(props)
+    ? props.state === "loading"
+    : Boolean(props.loading);
+
   const title = isStateProps(props)
     ? props.state === "loading"
       ? `Loading ${props.resourceName}`
@@ -33,11 +39,20 @@ export function ResourceFeedback(props: ResourceFeedbackProps) {
 
   return (
     <main className="flex w-full flex-1 px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-6 xl:px-7">
-      <section className="w-full rounded-[2rem] border border-white/10 bg-black/20 p-8">
-        <h1 className="text-2xl font-semibold text-white">{title}</h1>
-        <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--color-mist)]">
-          {detail}
-        </p>
+      <section className="flex w-full items-center gap-5 rounded-[2rem] border border-white/10 bg-black/20 p-8">
+        {isLoading ? (
+          <span
+            role="status"
+            aria-label="Loading"
+            className="inline-block h-10 w-10 shrink-0 animate-spin rounded-full border-[3px] border-[var(--color-shell-border)] border-t-[var(--color-sand)]"
+          />
+        ) : null}
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold text-white">{title}</h1>
+          <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--color-mist)]">
+            {detail}
+          </p>
+        </div>
       </section>
     </main>
   );

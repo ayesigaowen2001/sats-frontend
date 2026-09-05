@@ -673,6 +673,7 @@ export function VideoLiveStreamPageView(): React.JSX.Element {
         <ResourceFeedback
           title="Loading camera streams"
           detail="Fetching active cameras for live streaming."
+          loading
         />
       ) : cameras.length === 0 ? (
         <ResourceFeedback

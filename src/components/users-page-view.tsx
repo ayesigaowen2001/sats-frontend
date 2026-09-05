@@ -24,6 +24,7 @@ export function UsersPageView() {
       <ResourceFeedback
         title="Loading user management"
         detail="The platform is loading identities, roles, and permission contracts from the SATS access service."
+        loading
       />
     );
   }

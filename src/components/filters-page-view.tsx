@@ -24,6 +24,7 @@ export function FiltersPageView() {
       <ResourceFeedback
         title="Loading saved filters"
         detail="The filters engine is loading shared presets and reusable query definitions for the workspace."
+        loading
       />
     );
   }

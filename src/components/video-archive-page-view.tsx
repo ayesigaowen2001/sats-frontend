@@ -755,6 +755,7 @@ export function VideoArchivePageView(): React.JSX.Element {
         <ResourceFeedback
           title="Loading video clips"
           detail="Fetching clips for the selected organization."
+          loading
         />
       ) : rows.length === 0 ? (
         <ResourceFeedback

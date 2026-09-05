@@ -8,6 +8,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { ForbiddenView } from "@/components/forbidden-view";
 import { PageErrorBoundary } from "@/components/page-error-boundary";
 import { ResourceFeedback } from "@/components/resource-feedback";
+import { PageLoader } from "@/components/common/page-loader";
 import {
   getDashboardModule,
   getDefaultSidebarItem,
@@ -114,7 +115,7 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
   }, [currentModule.href, defaultSidebarItem, isModuleHub, pathname, router]);
 
   if (!hasHydrated || !permissionsReady) {
-    return <ResourceFeedback state="loading" resourceName="permissions" />;
+    return <PageLoader />;
   }
 
   if (!sessionData) {

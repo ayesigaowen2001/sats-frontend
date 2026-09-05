@@ -374,6 +374,7 @@ export function OrganizationLocalNodesPageView() {
       <ResourceFeedback
         title="Loading local node accounts"
         detail="Fetching local nodes for the selected organization."
+        loading
       />
     );
   }
