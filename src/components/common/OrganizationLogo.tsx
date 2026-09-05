@@ -5,6 +5,9 @@ import { useState, type ComponentPropsWithoutRef } from "react";
 import { useUIStore } from "@/store/useUIStore";
 import { useAuthStore } from "@/store/useAuthStore";
 
+/** Platform logo shown for system administrator accounts that aren't tied to an organisation. */
+const SYSTEM_ADMIN_LOGO_URL = "/images/wildlife-conservation.jpg";
+
 interface OrganizationLogoProps extends Omit<
   ComponentPropsWithoutRef<"img">,
   "src" | "alt"
@@ -47,18 +50,28 @@ export function OrganizationLogo({
   const branding = useUIStore((state) => state.branding);
   const brandingLogoBlobUrl = useUIStore((state) => state.brandingLogoBlobUrl);
   const organizationId = useAuthStore((state) => state.user.organizationId);
+  const role = useAuthStore((state) => state.user.role);
   const [imgError, setImgError] = useState(false);
+
+  // System administrators aren't tied to any organisation, so they use the
+  // platform's default wildlife-conservation logo instead of org branding.
+  const isSystemAdmin =
+    role === "System Administrator" || organizationId === "platform-authority";
 
   const orgMatches = branding.brandingOrgId === organizationId;
   // Use the actual blob URL if available, otherwise use the logo_file name
-  const logoUrl = orgMatches
+  const orgLogoUrl = orgMatches
     ? brandingLogoBlobUrl || branding.brandingLogoUrl || null
     : null;
+  // Prefer organisation branding; fall back to the platform logo for system admins.
+  const logoUrl = orgLogoUrl || (isSystemAdmin ? SYSTEM_ADMIN_LOGO_URL : null);
   const hasLogo = !!logoUrl && !imgError;
 
   // 🐛 DEBUG: trace logo resolution
   console.log("[OrganizationLogo] Resolving logo:", {
     organizationId,
+    role,
+    isSystemAdmin,
     brandingOrgId: branding.brandingOrgId,
     orgMatches,
     brandingLogoUrl: branding.brandingLogoUrl,
@@ -99,7 +112,7 @@ export function OrganizationLogo({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={logoUrl}
-      alt="Organization logo"
+      alt={isSystemAdmin ? "SATS platform logo" : "Organization logo"}
       className={`object-contain ${className}`}
       style={{ maxHeight }}
       onError={() => setImgError(true)}

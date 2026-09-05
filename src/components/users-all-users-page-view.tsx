@@ -351,6 +351,7 @@ export function UsersAllUsersPageView() {
       <ResourceFeedback
         title="Loading users"
         detail="Fetching all users from SATS services."
+        loading
       />
     );
   }

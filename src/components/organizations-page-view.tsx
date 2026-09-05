@@ -59,6 +59,7 @@ export function OrganizationsPageView() {
       <ResourceFeedback
         title="Loading organization operations"
         detail="The organization management route is hydrating subscriptions, tenant summaries, and local nodes from SATS services."
+        loading
       />
     );
   }

@@ -337,6 +337,7 @@ export function OrganizationSubscriptionPlansPageView() {
       <ResourceFeedback
         title="Loading subscription plans"
         detail="Fetching all plan definitions from SATS services."
+        loading
       />
     );
   }

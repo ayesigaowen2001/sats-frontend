@@ -28,6 +28,7 @@ export function AdministratorPageView() {
       <ResourceFeedback
         title="Loading administrator console"
         detail="The platform is hydrating domain mappings, tenant onboarding, and rollout governance queues."
+        loading
       />
     );
   }

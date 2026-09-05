@@ -332,6 +332,7 @@ export function UsersSystemAdministratorsPageView() {
       <ResourceFeedback
         title="Loading system administrators"
         detail="Fetching system administrators from SATS services."
+        loading
       />
     );
   }

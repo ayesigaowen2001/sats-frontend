@@ -33,7 +33,7 @@ export function DataTable<T extends { id: string | number }>({
         style={horizontalScroll ? { minWidth: minTableWidth } : undefined}
       >
         <div
-          className="hidden grid-cols-[repeat(var(--column-count),minmax(0,1fr))] gap-4 border-b border-white/10 bg-black/30 px-4 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-fog)] md:grid"
+          className="hidden grid-cols-[repeat(var(--column-count),minmax(0,1fr))] gap-3 border-b border-white/10 bg-black/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-fog)] md:grid"
           style={{ ["--column-count" as string]: columns.length }}
         >
           {columns.map((column) => (
@@ -46,13 +46,13 @@ export function DataTable<T extends { id: string | number }>({
           {rows.map((row) => (
             <div
               key={row.id}
-              className="grid gap-4 px-4 py-4 md:grid-cols-[repeat(var(--column-count),minmax(0,1fr))]"
+              className="grid gap-3 px-4 py-2.5 md:grid-cols-[repeat(var(--column-count),minmax(0,1fr))]"
               style={{ ["--column-count" as string]: columns.length }}
             >
               {columns.map((column) => (
                 <div
                   key={column.header}
-                  className="min-w-[10rem] break-words text-sm leading-6 text-white/85"
+                  className="min-w-[10rem] break-words text-sm leading-5 text-white/85"
                 >
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-fog)] md:hidden">
                     {column.header}

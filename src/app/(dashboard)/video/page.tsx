@@ -1,5 +1,5 @@
-import { ModuleScaffoldPage } from "@/components/module-scaffold-page";
+import { redirect } from "next/navigation";
 
 export default function VideoPage() {
-  return <ModuleScaffoldPage href="/video" />;
+  redirect("/video/live");
 }

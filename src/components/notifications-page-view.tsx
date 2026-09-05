@@ -26,6 +26,7 @@ export function NotificationsPageView() {
       <ResourceFeedback
         title="Loading alerts and chat"
         detail="The notification service is loading event alerts, acknowledgements, and conversation threads."
+        loading
       />
     );
   }

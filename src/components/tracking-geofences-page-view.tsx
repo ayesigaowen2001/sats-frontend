@@ -1768,6 +1768,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         <ResourceFeedback
           title="Loading geofences"
           detail="Fetching geofences for the selected organization."
+          loading
         />
       ) : rows.length === 0 ? (
         <ResourceFeedback

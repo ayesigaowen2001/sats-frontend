@@ -24,6 +24,7 @@ export function DashboardLivePage() {
       <ResourceFeedback
         title="Loading SATS overview"
         detail="The dashboard is hydrating from the SATS overview endpoint and shared client store."
+        loading
       />
     );
   }

@@ -580,6 +580,7 @@ export function OrganizationBrandingPageView() {
       <ResourceFeedback
         title="Loading organizations"
         detail="Fetching organization options for branding operations."
+        loading
       />
     );
   }

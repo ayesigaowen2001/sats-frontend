@@ -26,6 +26,7 @@ export function DataMigrationPageView() {
       <ResourceFeedback
         title="Loading migration operations"
         detail="The migration service is hydrating import queues, export jobs, and validation pipeline summaries."
+        loading
       />
     );
   }

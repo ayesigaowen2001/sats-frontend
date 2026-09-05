@@ -449,6 +449,7 @@ export function UsersRolesPermissionsPageView() {
       <ResourceFeedback
         title="Loading roles"
         detail="Fetching role catalog from SATS services."
+        loading
       />
     );
   }

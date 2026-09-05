@@ -865,6 +865,7 @@ export function VideoCamerasPageView(): React.JSX.Element {
         <ResourceFeedback
           title="Loading cameras"
           detail="Fetching cameras for the selected organization."
+          loading
         />
       ) : rows.length === 0 ? (
         <ResourceFeedback

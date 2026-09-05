@@ -24,6 +24,7 @@ export function ReportsPageView() {
       <ResourceFeedback
         title="Loading reports and exports"
         detail="The reports route is requesting queued outputs and export capabilities from the SATS reporting service."
+        loading
       />
     );
   }
