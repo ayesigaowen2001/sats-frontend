@@ -4,7 +4,6 @@ import { UsersAllUsersPageView } from "../../../../components/users-all-users-pa
 import { UsersPermissionsPageView } from "../../../../components/users-permissions-page-view";
 import { UsersRolesPermissionsPageView } from "../../../../components/users-roles-permissions-page-view";
 import { UsersSystemAdministratorsPageView } from "../../../../components/users-system-administrators-page-view";
-import { ModuleSectionPage } from "@/components/module-section-page";
 import { hasModuleSection } from "@/lib/dashboard-config";
 
 export default async function UsersSectionPage({
@@ -34,5 +33,5 @@ export default async function UsersSectionPage({
     return <UsersPermissionsPageView />;
   }
 
-  return <ModuleSectionPage pathname={`/users/${section}`} />;
+  notFound();
 }

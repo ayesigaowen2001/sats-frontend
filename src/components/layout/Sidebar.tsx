@@ -29,6 +29,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   // Read session data only after hydration to avoid mismatch
   useEffect(() => {
+    // Session data is browser-only and must be loaded after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSessionData(getSessionData());
     setHasHydrated(true);
   }, []);
@@ -80,7 +82,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               "sats-sidebar-menu-item flex items-center gap-3 rounded-[1.3rem] border px-4 py-3 text-left transition-colors",
               isActive
                 ? "border-[var(--color-sand)]/40 bg-[var(--color-sand)]/12"
-                : "border-transparent bg-transparent hover:border-white/10 hover:bg-white/[0.04]",
+                : "border-white/[0.06] bg-white/[0.025] hover:border-white/10 hover:bg-white/[0.08]",
             )}
             aria-current={isActive ? "page" : undefined}
           >
@@ -115,7 +117,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 w-[320px] flex-none border-r border-[var(--color-shell-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] transition-transform lg:sticky lg:top-0 lg:z-20 lg:h-screen",
+          "fixed inset-y-0 left-0 z-40 w-[320px] flex-none border-r border-[var(--color-shell-border)] bg-[var(--color-night-soft)] shadow-[18px_0_48px_rgba(0,0,0,0.35)] transition-transform lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] lg:shadow-none",
           isOpen ? "translate-x-0" : "-translate-x-full lg:hidden",
         )}
       >
@@ -148,7 +150,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               "mt-4 flex w-full items-center gap-3 rounded-[1.3rem] border px-4 py-3 text-left transition-colors",
               isAppsActive
                 ? "border-[var(--color-sand)]/40 bg-[var(--color-sand)]/12"
-                : "border-transparent bg-transparent hover:border-white/10 hover:bg-white/[0.04]",
+                : "border-white/[0.06] bg-white/[0.025] hover:border-white/10 hover:bg-white/[0.08]",
             )}
             aria-current={isAppsActive ? "page" : undefined}
           >

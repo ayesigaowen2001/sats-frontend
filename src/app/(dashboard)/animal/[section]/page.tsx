@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 
 import { AllAnimalsPageView } from "@/components/all-animals-page-view";
 import { AnimalClassificationsPageView } from "@/components/animal-classifications-page-view";
-import { ModuleSectionPage } from "@/components/module-section-page";
 import { hasModuleSection } from "@/lib/dashboard-config";
 
 export default async function AnimalSectionPage({
@@ -24,5 +23,5 @@ export default async function AnimalSectionPage({
     return <AnimalClassificationsPageView />;
   }
 
-  return <ModuleSectionPage pathname={`/animal/${section}`} />;
+  notFound();
 }
