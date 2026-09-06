@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ResourceRowActions } from "@/components/common/resource-row-actions";
 import { DataTable } from "@/components/data-table";
+import { MapProviderSelector } from "@/components/map-provider-selector";
 import { ResourceFeedback } from "@/components/resource-feedback";
 import { getSessionData } from "@/lib/auth-tokens";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
@@ -13,6 +14,14 @@ import {
   type GeofenceInput,
 } from "@/lib/tracking/geofences-service";
 import { useAuthStore } from "@/store/useAuthStore";
+import {
+  hasGoogleMapsKey,
+  getGoogleMapsApi,
+  loadGoogleMaps,
+  type GoogleMap,
+  type GooglePolygon,
+  useMapProvider,
+} from "@/lib/maps/map-provider";
 
 interface OrganizationOption {
   id: string;
@@ -355,6 +364,27 @@ interface DrawCollection {
   features?: DrawFeature[];
 }
 
+type MapViewMode = "streets" | "satellite";
+
+interface GoogleDrawingController {
+  setDrawingMode: (mode: "polygon" | null) => void;
+  setMap: (map: GoogleMap | null) => void;
+  dispose: () => void;
+}
+
+interface GoogleLatLngLiteral {
+  lat: number;
+  lng: number;
+}
+
+interface GoogleEventListener {
+  remove: () => void;
+}
+
+interface GoogleMapMouseEvent {
+  latLng: { toJSON: () => GoogleLatLngLiteral } | null;
+}
+
 interface DrawEvent {
   features?: DrawFeature[];
 }
@@ -368,6 +398,7 @@ type MapInstance = {
   addLayer: (layer: unknown, beforeId?: string) => void;
   getLayer: (id: string) => unknown;
   removeLayer: (id: string) => void;
+  setStyle: (style: string) => void;
   on: (eventName: string, callback: (event?: DrawEvent) => void) => void;
   off: (eventName: string, callback: (event?: DrawEvent) => void) => void;
   doubleClickZoom?: {
@@ -381,6 +412,7 @@ type DrawInstance = {
   deleteAll: () => void;
   add: (feature: unknown) => void;
   changeMode: (mode: string, options?: Record<string, unknown>) => void;
+  getMode?: () => string;
 };
 
 type DrawControlsConfig = {
@@ -400,7 +432,7 @@ type DrawConstructor = new (options: {
 
 const drawControls: DrawControlsConfig = {
   point: false,
-  line_string: true,
+  line_string: false,
   polygon: true,
   trash: true,
   combine_features: false,
@@ -429,12 +461,15 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   const { user } = useAuthStore();
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const drawToolbarRef = useRef<HTMLDivElement | null>(null);
   const drawSyncDebounceTimeoutRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
   const DrawConstructorRef = useRef<DrawConstructor | null>(null);
   const mapRef = useRef<MapInstance | null>(null);
+  const googleMapRef = useRef<GoogleMap | null>(null);
+  const googlePolygonRef = useRef<GooglePolygon | null>(null);
+  const googleDrawingManagerRef = useRef<GoogleDrawingController | null>(null);
+  const activeMapStyleRef = useRef<MapViewMode>("streets");
   const drawRef = useRef<DrawInstance | null>(null);
   const geofenceSourceIdRef = useRef("geofence-polygons-source");
   const geofenceFillLayerIdRef = useRef("geofence-polygons-fill");
@@ -467,6 +502,26 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
 
   const [testAreaOutput, setTestAreaOutput] = useState("");
   const [canEditPolygon, setCanEditPolygon] = useState(false);
+  const [mapViewMode, setMapViewMode] = useState<MapViewMode>("streets");
+  const mapProvider = useMapProvider();
+
+  const mapStyleConfig = useMemo(() => {
+    const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
+
+    if (mapTilerKey) {
+      return {
+        streets: `https://api.maptiler.com/maps/streets-v2/style.json?key=${mapTilerKey}`,
+        satellite: `https://api.maptiler.com/maps/hybrid/style.json?key=${mapTilerKey}`,
+        hasSatellite: true,
+      };
+    }
+
+    return {
+      streets: "https://demotiles.maplibre.org/style.json",
+      satellite: "https://demotiles.maplibre.org/style.json",
+      hasSatellite: false,
+    };
+  }, []);
 
   const selectedOrganization = useMemo(
     () => organizations.find((org) => org.id === selectedOrgId) ?? null,
@@ -491,6 +546,8 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       return;
     }
 
+    // The session user ID must populate the form after authentication resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCreateValues((prev) =>
       !prev.created_by || !isUuid(prev.created_by)
         ? { ...prev, created_by: currentUserId }
@@ -588,6 +645,20 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   );
 
   const getDrawnPolygonCoordinates = useCallback((): number[][][] | null => {
+    const googlePolygon = googlePolygonRef.current;
+    if (googlePolygon) {
+      const path = googlePolygon.getPath();
+      const ring: number[][] = [];
+      for (let index = 0; index < path.getLength(); index += 1) {
+        const point = path.getAt(index);
+        ring.push([point.lng(), point.lat()]);
+      }
+
+      if (ring.length >= 3) {
+        return [ensureClosedLinearRing(ring)];
+      }
+    }
+
     const draw = drawRef.current;
     console.log(
       "[geofences] getDrawnPolygonCoordinates called, draw ref:",
@@ -676,6 +747,22 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   }, []);
 
   const loadPolygonIntoDraw = useCallback((coordinates: number[][][]) => {
+    if (googleMapRef.current) {
+      googlePolygonRef.current?.setMap(null);
+      const googleMaps = getGoogleMapsApi();
+      googlePolygonRef.current = new googleMaps.maps.Polygon({
+        paths: coordinates[0]?.map(([lng, lat]) => ({ lat, lng })),
+        strokeColor: "#3bb2d0",
+        strokeWeight: 2,
+        fillColor: "#3bb2d0",
+        fillOpacity: 0.1,
+        editable: false,
+        map: googleMapRef.current,
+      });
+      setCanEditPolygon(true);
+      return;
+    }
+
     const draw = drawRef.current;
     console.log(
       "[geofences] loadPolygonIntoDraw called, draw ref:",
@@ -778,6 +865,16 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   ]);
 
   const handleEditPolygon = useCallback(() => {
+    if (googlePolygonRef.current) {
+      googlePolygonRef.current.setEditable(true);
+      if (editingGeofence) {
+        setUpdateError("");
+      } else {
+        setCreateError("");
+      }
+      return;
+    }
+
     const draw = drawRef.current;
 
     if (!draw) {
@@ -834,6 +931,18 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   }, [editingGeofence]);
 
   const handleStartPolygonDraw = useCallback(() => {
+    if (googleDrawingManagerRef.current) {
+      googlePolygonRef.current?.setMap(null);
+      googlePolygonRef.current = null;
+      googleDrawingManagerRef.current.setDrawingMode("polygon");
+      if (editingGeofence) {
+        setUpdateError("");
+      } else {
+        setCreateError("");
+      }
+      return;
+    }
+
     const draw = drawRef.current;
 
     if (!draw) {
@@ -864,47 +973,135 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
     }
   }, [editingGeofence]);
 
-  const ensureEditToolbarButton = useCallback(() => {
-    const toolbar = drawToolbarRef.current;
+  const ensureMapToolbarButtons = useCallback(() => {
+    const topLeft = mapContainerRef.current?.querySelector(
+      ".maplibregl-ctrl-top-left",
+    ) as HTMLDivElement | null;
 
-    if (!toolbar) {
+    if (!topLeft) {
       return;
     }
 
-    let editButton = toolbar.querySelector<HTMLButtonElement>(
-      ".sats-draw-edit-btn",
-    );
+    let toolbar = topLeft.querySelector(
+      ".sats-geofence-map-toolbar",
+    ) as HTMLDivElement | null;
 
-    if (!editButton) {
-      editButton = document.createElement("button");
-      editButton.type = "button";
-      editButton.className = "mapbox-gl-draw_ctrl-draw-btn sats-draw-edit-btn";
-      editButton.title = "Edit polygon";
-      editButton.setAttribute("aria-label", "Edit polygon");
-      editButton.textContent = "E";
-      editButton.style.fontSize = "0.7rem";
-      editButton.style.fontWeight = "700";
-
-      const polygonButton = toolbar.querySelector<HTMLButtonElement>(
-        ".mapbox-gl-draw_polygon",
-      );
-
-      if (
-        polygonButton?.parentElement === toolbar &&
-        polygonButton.nextSibling
-      ) {
-        toolbar.insertBefore(editButton, polygonButton.nextSibling);
-      } else {
-        toolbar.appendChild(editButton);
-      }
+    if (!toolbar) {
+      toolbar = document.createElement("div");
+      toolbar.className =
+        "sats-geofence-map-toolbar maplibregl-ctrl maplibregl-ctrl-group";
+      toolbar.style.display = "flex";
+      toolbar.style.flexDirection = "column";
+      toolbar.style.gap = "4px";
+      toolbar.style.padding = "4px";
+      toolbar.style.borderRadius = "8px";
+      toolbar.style.background = "rgba(15, 23, 42, 0.65)";
+      topLeft.appendChild(toolbar);
     }
 
-    editButton.onclick = () => {
-      handleEditPolygon();
+    const defaultButtons = topLeft.querySelectorAll(
+      ".mapbox-gl-draw_polygon, .mapboxgl-draw_polygon, .mapbox-gl-draw_trash, .mapboxgl-draw_trash",
+    );
+    defaultButtons.forEach((button) => {
+      const htmlButton = button as HTMLElement;
+      htmlButton.style.display = "none";
+    });
+
+    const buildButton = (
+      label: string,
+      iconSvg: string,
+      onClick: () => void,
+      disabled: boolean,
+      actionName: string,
+    ) => {
+      let button = toolbar!.querySelector(
+        `[data-geofence-action="${actionName}"]`,
+      ) as HTMLButtonElement | null;
+
+      if (!button) {
+        button = document.createElement("button");
+        button.type = "button";
+        button.title = label;
+        button.setAttribute("aria-label", label);
+        button.dataset.geofenceAction = actionName;
+        button.className = "maplibregl-ctrl-icon";
+        button.style.width = "29px";
+        button.style.height = "29px";
+        button.style.display = "flex";
+        button.style.alignItems = "center";
+        button.style.justifyContent = "center";
+        button.style.border = "1px solid rgba(148, 163, 184, 0.8)";
+        button.style.borderRadius = "6px";
+        button.style.background = disabled
+          ? "rgba(71, 85, 105, 0.7)"
+          : "rgba(15, 23, 42, 0.96)";
+        button.style.color = "#f8fafc";
+        button.style.boxShadow = "0 2px 8px rgba(15, 23, 42, 0.35)";
+        button.style.cursor = disabled ? "not-allowed" : "pointer";
+        button.style.opacity = disabled ? "0.6" : "1";
+        button.innerHTML = `<span aria-hidden="true" style="display:flex; width:16px; height:16px; align-items:center; justify-content:center; color:inherit;">${iconSvg}</span>`;
+        button.onclick = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onClick();
+        };
+        button.onpointerdown = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        };
+        toolbar!.appendChild(button);
+      }
+
+      button.disabled = disabled;
+      button.style.background = disabled
+        ? "rgba(71, 85, 105, 0.7)"
+        : "rgba(15, 23, 42, 0.96)";
+      button.style.cursor = disabled ? "not-allowed" : "pointer";
+      button.style.opacity = disabled ? "0.6" : "1";
     };
 
-    editButton.disabled = !canEditPolygon;
-  }, [canEditPolygon, handleEditPolygon]);
+    buildButton(
+      "Draw polygon",
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h9.2l4.3 4.3v7.2A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9zm2.5-.5a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V9.8L15.8 7.5H6.5zm1.5 3.5h7v1.5h-7V10.5zm0 3h7v1.5h-7v-1.5z" fill="currentColor"/></svg>',
+      () => handleStartPolygonDraw(),
+      false,
+      "draw-polygon",
+    );
+
+    buildButton(
+      "Edit polygon",
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.71-9.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.34 1.34 3.75 3.75 1.34-1.34z" fill="currentColor"/></svg>',
+      () => handleEditPolygon(),
+      !canEditPolygon,
+      "edit-polygon",
+    );
+
+    buildButton(
+      mapViewMode === "satellite" ? "Streets view" : "Satellite view",
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13zm2 .5v4h4V6H6zm6 0v4h6V6h-6zM6 12v6h4v-6H6zm6 0v6h6v-6h-6z" fill="currentColor"/></svg>',
+      () =>
+        setMapViewMode((current) =>
+          current === "satellite" ? "streets" : "satellite",
+        ),
+      mapProvider === "maptiler"
+        ? !mapStyleConfig.hasSatellite
+        : !hasGoogleMapsKey(),
+      "map-style",
+    );
+  }, [
+    canEditPolygon,
+    handleEditPolygon,
+    handleStartPolygonDraw,
+    mapProvider,
+    mapStyleConfig.hasSatellite,
+    mapViewMode,
+  ]);
+
+  useEffect(() => {
+    if (mapReadyTick > 0) {
+      ensureMapToolbarButtons();
+    }
+  }, [ensureMapToolbarButtons, mapReadyTick]);
 
   useEffect(() => {
     let active = true;
@@ -944,14 +1141,112 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         return;
       }
 
-      const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
-      const styleUrl = mapTilerKey
-        ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${mapTilerKey}`
-        : "https://demotiles.maplibre.org/style.json";
+      if (mapProvider === "google") {
+        try {
+          const googleMaps = await loadGoogleMaps();
+
+          if (!active || !mapContainerRef.current) {
+            return;
+          }
+
+          const googleMap = new googleMaps.maps.Map(mapContainerRef.current, {
+            center: { lat: -1.2921, lng: 36.8219 },
+            zoom: 5,
+            mapTypeControl: true,
+            streetViewControl: false,
+            fullscreenControl: true,
+          });
+          googleMapRef.current = googleMap;
+
+          let drawingMode: "polygon" | null = null;
+          let points: GoogleLatLngLiteral[] = [];
+          let previewPolygon: GooglePolygon | null = null;
+          let clickListener: GoogleEventListener | null = null;
+          let doubleClickListener: GoogleEventListener | null = null;
+
+          const finishPolygon = () => {
+            if (points.length < 3) {
+              return;
+            }
+
+            previewPolygon?.setMap(null);
+            previewPolygon = null;
+            googlePolygonRef.current?.setMap(null);
+            googlePolygonRef.current = new googleMaps.maps.Polygon({
+              paths: points,
+              strokeColor: "#3bb2d0",
+              strokeWeight: 2,
+              fillColor: "#3bb2d0",
+              fillOpacity: 0.1,
+              editable: false,
+              map: googleMap,
+            });
+            drawingMode = null;
+            points = [];
+            setCanEditPolygon(true);
+            handleDrawSync();
+          };
+
+          const drawingController: GoogleDrawingController = {
+            setDrawingMode: (mode) => {
+              drawingMode = mode;
+              points = [];
+              previewPolygon?.setMap(null);
+              previewPolygon = null;
+            },
+            setMap: (nextMap) => {
+              googleMap.setOptions({
+                disableDoubleClickZoom: nextMap !== null,
+              });
+            },
+            dispose: () => {
+              clickListener?.remove();
+              doubleClickListener?.remove();
+              previewPolygon?.setMap(null);
+            },
+          };
+
+          clickListener = googleMaps.maps.event.addListener(
+            googleMap,
+            "click",
+            (event: GoogleMapMouseEvent) => {
+              if (drawingMode !== "polygon" || !event.latLng) {
+                return;
+              }
+              points = [...points, event.latLng.toJSON()];
+              previewPolygon?.setMap(null);
+              previewPolygon = new googleMaps.maps.Polygon({
+                paths: points,
+                strokeColor: "#fbb03b",
+                strokeWeight: 2,
+                fillColor: "#fbb03b",
+                fillOpacity: 0.08,
+                map: googleMap,
+              });
+            },
+          );
+          doubleClickListener = googleMaps.maps.event.addListener(
+            googleMap,
+            "dblclick",
+            finishPolygon,
+          );
+          drawingController.setMap(googleMap);
+          googleDrawingManagerRef.current = drawingController;
+          setMapReadyTick((current) => current + 1);
+          return;
+        } catch (requestError) {
+          setCreateError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Failed to load Google Maps.",
+          );
+          return;
+        }
+      }
 
       const map = new maplibregl.Map({
         container: mapContainerRef.current,
-        style: styleUrl,
+        style: mapStyleConfig.streets,
         center: [36.8219, -1.2921],
         zoom: 5,
         maxZoom: 20,
@@ -964,12 +1259,10 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       });
 
       const onDrawCreate = () => {
-        console.log("[geofences] draw.create event fired");
         handleDrawSync();
       };
 
       const onDrawUpdate = () => {
-        console.log("[geofences] draw.update event fired");
         if (drawSyncDebounceTimeoutRef.current) {
           clearTimeout(drawSyncDebounceTimeoutRef.current);
         }
@@ -988,97 +1281,57 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         handleDrawSync();
       };
 
-      console.log("[geofences] map instance created, waiting for load event");
+      const onStyleLoad = () => {
+        setMapReadyTick((current) => current + 1);
+      };
 
-      let controlsAdded = false;
       map.on("load", () => {
-        console.log(
-          "[geofences] map load event fired, active:",
-          active,
-          "controlsAdded:",
-          controlsAdded,
-        );
-        if (!active || controlsAdded) return;
-        controlsAdded = true;
+        if (!active) {
+          return;
+        }
+
         map.doubleClickZoom?.disable();
         map.addControl(new maplibregl.NavigationControl(), "top-right");
 
-        // Temporarily make addLayer idempotent to suppress the "layer already
-        // exists" error that MapboxDraw triggers when its internal styledata
-        // listener fires a second setup() call synchronously during onAdd.
         const originalAddLayer = map.addLayer.bind(map) as typeof map.addLayer;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (map as any).addLayer = (layer: any, ...args: any[]) => {
           if (map.getLayer(layer.id)) return map;
           return originalAddLayer(layer, ...args);
         };
+
         try {
           map.addControl(draw as never, "top-left");
-          console.log("[geofences] draw control added successfully");
-        } catch (drawAddErr) {
-          console.error("[geofences] failed to add draw control:", drawAddErr);
+        } catch {
+          // ignored: the draw control is optional if the map is not ready yet
         }
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (map as any).addLayer = originalAddLayer;
 
-        drawToolbarRef.current =
-          mapContainerRef.current?.querySelector<HTMLDivElement>(
-            ".maplibregl-ctrl-group.maplibregl-ctrl, .mapboxgl-ctrl-group.mapboxgl-ctrl",
-          ) ?? null;
+        const topLeft = map
+          .getContainer()
+          .querySelector(".maplibregl-ctrl-top-left") as HTMLDivElement | null;
+        if (topLeft) {
+          ensureMapToolbarButtons();
+        }
 
-        console.log("[geofences] drawToolbarRef set:", drawToolbarRef.current);
-        console.log("[geofences] drawRef set:", drawRef.current);
-
-        ensureEditToolbarButton();
-        // --- interaction diagnostics ---
-        map.on("draw.modechange", (e) => {
-          console.log("[geofences] draw.modechange:", e);
-        });
-        map.on("draw.render", () => {
-          console.log("[geofences] draw.render fired");
-        });
-        map.on("draw.selectionchange", (e) => {
-          console.log("[geofences] draw.selectionchange:", e);
-        });
-        map.on("click", (e) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const drawInstance = drawRef.current as any;
-          const mode = drawInstance?.getMode?.() ?? "unknown";
-          console.log(
-            "[geofences] map click at",
-            e?.lngLat,
-            "draw mode:",
-            mode,
-          );
-        });
-
-        // Log available methods on the draw instance to verify full init
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const drawAny = draw as any;
-        console.log("[geofences] draw.getMode():", drawAny.getMode?.());
-        console.log(
-          "[geofences] draw available methods:",
-          Object.keys(drawAny).join(", "),
-        );
         setMapReadyTick((current) => current + 1);
       });
 
       map.on("draw.create", onDrawCreate);
       map.on("draw.update", onDrawUpdate);
       map.on("draw.delete", onDrawDelete);
-
-      console.log(
-        "[geofences] registered draw.create / draw.update / draw.delete listeners",
-      );
+      map.on("style.load", onStyleLoad);
 
       mapRef.current = map as unknown as MapInstance;
       drawRef.current = draw;
-      console.log("[geofences] mapRef and drawRef assigned");
 
       return () => {
         map.off("draw.create", onDrawCreate);
         map.off("draw.update", onDrawUpdate);
         map.off("draw.delete", onDrawDelete);
+        map.off("style.load", onStyleLoad);
       };
     };
 
@@ -1107,9 +1360,48 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
 
       drawRef.current = null;
       DrawConstructorRef.current = null;
-      drawToolbarRef.current = null;
+      googleDrawingManagerRef.current?.dispose();
+      googleDrawingManagerRef.current?.setMap(null);
+      googleDrawingManagerRef.current = null;
+      googlePolygonRef.current?.setMap(null);
+      googlePolygonRef.current = null;
+      googleMapRef.current = null;
+      if (mapContainerRef.current) {
+        mapContainerRef.current.innerHTML = "";
+      }
     };
-  }, [ensureEditToolbarButton, handleDrawSync]);
+  }, [
+    ensureMapToolbarButtons,
+    handleDrawSync,
+    mapProvider,
+    mapStyleConfig.streets,
+  ]);
+
+  useEffect(() => {
+    if (googleMapRef.current) {
+      googleMapRef.current.setMapTypeId(
+        mapViewMode === "satellite" ? "hybrid" : "roadmap",
+      );
+      return;
+    }
+
+    if (
+      !mapRef.current ||
+      mapProvider === "google" ||
+      !mapStyleConfig.hasSatellite ||
+      activeMapStyleRef.current === mapViewMode
+    ) {
+      return;
+    }
+
+    const nextStyle =
+      mapViewMode === "satellite"
+        ? mapStyleConfig.satellite
+        : mapStyleConfig.streets;
+
+    activeMapStyleRef.current = mapViewMode;
+    mapRef.current.setStyle(nextStyle);
+  }, [mapProvider, mapStyleConfig, mapViewMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1183,10 +1475,6 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   }, [clearGeofencePolygonLayers, mapReadyTick, rows, selectedOrgId]);
 
   useEffect(() => {
-    ensureEditToolbarButton();
-  }, [ensureEditToolbarButton]);
-
-  useEffect(() => {
     let isMounted = true;
 
     const load = async () => {
@@ -1224,6 +1512,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
 
   useEffect(() => {
     if (!selectedOrgId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRows([]);
       return;
     }
@@ -1264,6 +1553,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCreateValues((prev) =>
       prev.park_name === selectedOrganization.name
         ? prev
@@ -1485,36 +1775,66 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
           <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--color-mist)]">
             Geofence Map Drawing
           </h3>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleStartPolygonDraw}
-              className="rounded-full border border-emerald-300/40 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-emerald-100"
-            >
-              Draw Polygon
-            </button>
-            <button
-              type="button"
-              onClick={handleEditPolygon}
-              disabled={!canEditPolygon}
-              className="rounded-full border border-amber-300/40 bg-amber-400/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Edit Polygon
-            </button>
-            <button
-              type="button"
-              onClick={handleExtractCoordinates}
-              className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-cyan-100"
-            >
-              Extract Coordinates
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleExtractCoordinates}
+            className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-cyan-100"
+          >
+            Extract Coordinates
+          </button>
+          <MapProviderSelector />
         </div>
 
-        <div
-          ref={mapContainerRef}
-          className="geofence-map-container h-[22rem] w-full overflow-hidden rounded-xl border border-white/15"
-        />
+        <div className="relative">
+          {mapProvider === "google" ? (
+            <div className="absolute left-3 top-3 z-10 flex flex-col gap-2 rounded-lg border border-slate-300/70 bg-slate-950/90 p-2 shadow-lg">
+              <button
+                type="button"
+                onClick={handleStartPolygonDraw}
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-400/70 text-slate-100 hover:bg-slate-700"
+                title="Draw polygon"
+                aria-label="Draw polygon"
+              >
+                <span className="pi pi-pencil" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                disabled={!canEditPolygon}
+                onClick={handleEditPolygon}
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-400/70 text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Edit polygon"
+                aria-label="Edit polygon"
+              >
+                <span className="pi pi-file-edit" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setMapViewMode((current) =>
+                    current === "satellite" ? "streets" : "satellite",
+                  )
+                }
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-400/70 text-slate-100 hover:bg-slate-700"
+                title={
+                  mapViewMode === "satellite"
+                    ? "Streets view"
+                    : "Satellite view"
+                }
+                aria-label={
+                  mapViewMode === "satellite"
+                    ? "Streets view"
+                    : "Satellite view"
+                }
+              >
+                <span className="pi pi-image" aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+          <div
+            ref={mapContainerRef}
+            className="geofence-map-container h-[22rem] w-full overflow-hidden rounded-xl border border-white/15"
+          />
+        </div>
 
         <p className="mt-2 text-xs text-[var(--color-fog)]">
           Draw a polygon on the map, optionally edit vertices, then extract the

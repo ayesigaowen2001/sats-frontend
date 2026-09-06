@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Marker as MapLibreMarker } from "maplibre-gl";
 
 import { PageNumbers } from "@/components/common/pagination";
 import { DataPanel } from "@/components/data-panel";
 import { DataTable } from "@/components/data-table";
+import { MapProviderSelector } from "@/components/map-provider-selector";
 import { getSessionData } from "@/lib/auth-tokens";
 import { animalsService } from "@/lib/animals/animals-service";
 import { devicesService } from "@/lib/devices/devices-service";
@@ -13,6 +15,15 @@ import {
   trackingLogsService,
   type TrackingLogRecord,
 } from "@/lib/tracking/tracking-logs-service";
+import {
+  getGoogleMapsApi,
+  type GoogleMap,
+  type GoogleMarker,
+  hasGoogleMapsKey,
+  loadGoogleMaps,
+  type GooglePolyline,
+  useMapProvider,
+} from "@/lib/maps/map-provider";
 
 interface TrackingFilterValues {
   organization_id: string;
@@ -56,6 +67,11 @@ interface DeviceOption {
 interface PathGroup {
   animalId: string;
   points: TrackingLogRecord[];
+}
+
+interface PlaybackPoint {
+  longitude: number;
+  latitude: number;
 }
 
 type MapViewMode = "streets" | "satellite";
@@ -154,10 +170,20 @@ function normalizeFilterValues(
 export function TrackingLiveMapPageView() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
+  const googleMapRef = useRef<GoogleMap | null>(null);
+  const googleMarkerRefs = useRef<GoogleMarker[]>([]);
+  const googlePolylineRefs = useRef<GooglePolyline[]>([]);
+  const googleRoutePointRefs = useRef<GoogleMarker[]>([]);
+  const playbackAnimationFrameRef = useRef<number | null>(null);
+  const playbackProgressRef = useRef(0);
+  const playbackMapLibreMarkerRef = useRef<MapLibreMarker | null>(null);
+  const playbackGoogleMarkerRef = useRef<GoogleMarker | null>(null);
   const activeMapStyleRef = useRef<MapViewMode>("streets");
   const markerRefs = useRef<any[]>([]);
   const lineLayerIdsRef = useRef<string[]>([]);
   const lineSourceIdsRef = useRef<string[]>([]);
+  const routePointLayerIdsRef = useRef<string[]>([]);
+  const routePointSourceIdsRef = useRef<string[]>([]);
 
   const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [sessionOrganizationId, setSessionOrganizationId] = useState("");
@@ -210,6 +236,12 @@ export function TrackingLiveMapPageView() {
   const [pagination, setPagination] = useState<TrackingPagination | null>(null);
   const [mapViewMode, setMapViewMode] = useState<MapViewMode>("streets");
   const [mapStyleReadyTick, setMapStyleReadyTick] = useState(0);
+  const mapProvider = useMapProvider();
+  const [isPlaybackPlaying, setIsPlaybackPlaying] = useState(false);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
+  const [playbackAnimalId, setPlaybackAnimalId] = useState("");
+  const [navigationOrigin, setNavigationOrigin] = useState("");
+  const [navigationError, setNavigationError] = useState("");
 
   const mapStyleConfig = useMemo(() => {
     const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
@@ -318,8 +350,42 @@ export function TrackingLiveMapPageView() {
       .filter((group) => group.points.length > 1);
   }, [isMovementMode, rows]);
 
+  const playbackGroup = useMemo(() => {
+    const selected = pathGroups.find(
+      (group) => group.animalId === playbackAnimalId,
+    );
+    return selected ?? pathGroups[0] ?? null;
+  }, [pathGroups, playbackAnimalId]);
+
+  const latestLocations = useMemo(() => {
+    const latestByAnimal = new Map<string, TrackingLogRecord>();
+    rows.forEach((row) => {
+      const current = latestByAnimal.get(row.animalId);
+      if (
+        !current ||
+        new Date(row.timestamp).getTime() >
+          new Date(current.timestamp).getTime()
+      ) {
+        latestByAnimal.set(row.animalId, row);
+      }
+    });
+    return Array.from(latestByAnimal.values());
+  }, [rows]);
+
+  const selectedNavigationLocation = useMemo(() => {
+    const selected = playbackAnimalId
+      ? latestLocations.find((row) => row.animalId === playbackAnimalId)
+      : undefined;
+    return selected ?? latestLocations[0] ?? null;
+  }, [latestLocations, playbackAnimalId]);
+
   const clearPathLayers = useCallback(() => {
     const map = mapRef.current;
+
+    googlePolylineRefs.current.forEach((polyline) => polyline.setMap(null));
+    googlePolylineRefs.current = [];
+    googleRoutePointRefs.current.forEach((marker) => marker.setMap(null));
+    googleRoutePointRefs.current = [];
 
     if (!map) {
       return;
@@ -337,8 +403,22 @@ export function TrackingLiveMapPageView() {
       }
     });
 
+    routePointLayerIdsRef.current.forEach((layerId) => {
+      if (map.getLayer(layerId)) {
+        map.removeLayer(layerId);
+      }
+    });
+
+    routePointSourceIdsRef.current.forEach((sourceId) => {
+      if (map.getSource(sourceId)) {
+        map.removeSource(sourceId);
+      }
+    });
+
     lineLayerIdsRef.current = [];
     lineSourceIdsRef.current = [];
+    routePointLayerIdsRef.current = [];
+    routePointSourceIdsRef.current = [];
   }, []);
 
   const loadTracking = useCallback(async () => {
@@ -590,6 +670,35 @@ export function TrackingLiveMapPageView() {
         return;
       }
 
+      if (mapProvider === "google") {
+        try {
+          const googleMaps = await loadGoogleMaps();
+          if (!active || !mapContainerRef.current) {
+            return;
+          }
+          googleMapRef.current = new googleMaps.maps.Map(
+            mapContainerRef.current,
+            {
+              center: { lat: 0.3482, lng: 32.5831 },
+              zoom: 7,
+              mapTypeControl: true,
+              streetViewControl: false,
+              fullscreenControl: true,
+            },
+          );
+          activeMapStyleRef.current = "streets";
+          setMapStyleReadyTick((current) => current + 1);
+          return;
+        } catch (requestError) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Failed to load Google Maps.",
+          );
+          return;
+        }
+      }
+
       const maplibregl = (await import("maplibre-gl")).default;
       const styleUrl = mapStyleConfig.streets;
 
@@ -621,6 +730,8 @@ export function TrackingLiveMapPageView() {
 
       markerRefs.current.forEach((marker) => marker.remove());
       markerRefs.current = [];
+      googleMarkerRefs.current.forEach((marker) => marker.setMap(null));
+      googleMarkerRefs.current = [];
 
       clearPathLayers();
 
@@ -628,13 +739,30 @@ export function TrackingLiveMapPageView() {
         mapRef.current.remove();
         mapRef.current = null;
       }
+      googleMapRef.current = null;
+      if (mapContainerRef.current) {
+        mapContainerRef.current.innerHTML = "";
+      }
     };
-  }, [clearPathLayers, mapStyleConfig.streets]);
+  }, [clearPathLayers, mapProvider, mapStyleConfig.streets]);
 
   useEffect(() => {
     const map = mapRef.current;
 
-    if (!map) {
+    if (googleMapRef.current) {
+      if (
+        mapViewMode === "satellite" &&
+        (!hasGoogleMapsKey() || mapProvider !== "google")
+      ) {
+        return;
+      }
+      googleMapRef.current.setMapTypeId(
+        mapViewMode === "satellite" ? "hybrid" : "roadmap",
+      );
+      return;
+    }
+
+    if (!map || mapProvider === "google") {
       return;
     }
 
@@ -666,7 +794,7 @@ export function TrackingLiveMapPageView() {
       setMapStyleReadyTick((current) => current + 1);
     });
     map.setStyle(nextStyle);
-  }, [mapStyleConfig, mapViewMode]);
+  }, [mapProvider, mapStyleConfig, mapViewMode]);
 
   useEffect(() => {
     void loadTracking();
@@ -675,13 +803,79 @@ export function TrackingLiveMapPageView() {
   useEffect(() => {
     const map = mapRef.current;
 
+    googleMarkerRefs.current.forEach((marker) => marker.setMap(null));
+    googleMarkerRefs.current = [];
+    clearPathLayers();
+
+    if (!map && googleMapRef.current) {
+      if (!mapRows.length) {
+        return;
+      }
+
+      const googleMaps = getGoogleMapsApi();
+      const bounds = new googleMaps.maps.LatLngBounds();
+      if (isMovementMode) {
+        pathGroups.forEach((group, index) => {
+          const polyline = new googleMaps.maps.Polyline({
+            path: group.points.map((point) => ({
+              lat: point.latitude,
+              lng: point.longitude,
+            })),
+            geodesic: true,
+            strokeColor: pathColors[index % pathColors.length],
+            strokeOpacity: 0.75,
+            strokeWeight: 2,
+            map: googleMapRef.current,
+          });
+          googlePolylineRefs.current.push(polyline);
+
+          group.points.forEach((point, pointIndex) => {
+            const marker = new googleMaps.maps.Marker({
+              position: { lat: point.latitude, lng: point.longitude },
+              map: googleMapRef.current,
+              title: `Movement point ${pointIndex + 1}`,
+              icon: {
+                path: googleMaps.maps.SymbolPath.CIRCLE,
+                scale: 3.5,
+                fillColor: pathColors[index % pathColors.length],
+                fillOpacity: 1,
+                strokeColor: "#ffffff",
+                strokeWeight: 1,
+              },
+            });
+            googleRoutePointRefs.current.push(marker);
+          });
+        });
+      }
+
+      const latestId = mapRows[mapRows.length - 1]?.id ?? "";
+      mapRows.forEach((log) => {
+        const marker = new googleMaps.maps.Marker({
+          position: { lat: log.latitude, lng: log.longitude },
+          map: googleMapRef.current,
+          title: log.id === latestId ? "Latest position" : "Tracking position",
+        });
+        marker.addListener("click", () => {
+          const animal = animalById.get(log.animalId) ?? null;
+          const device = deviceById.get(log.deviceId) ?? null;
+          const infoWindow = new googleMaps.maps.InfoWindow({
+            content: buildPopupHtml(log, animal, device),
+          });
+          infoWindow.open({ map: googleMapRef.current!, anchor: marker });
+        });
+        googleMarkerRefs.current.push(marker);
+        bounds.extend(marker.getPosition()!);
+      });
+      googleMapRef.current.fitBounds(bounds, 60);
+      return;
+    }
+
     if (!map) {
       return;
     }
 
     markerRefs.current.forEach((marker) => marker.remove());
     markerRefs.current = [];
-    clearPathLayers();
 
     if (!mapRows.length) {
       return;
@@ -728,13 +922,44 @@ export function TrackingLiveMapPageView() {
             },
             paint: {
               "line-color": pathColors[index % pathColors.length],
-              "line-width": 3,
-              "line-opacity": 0.9,
+              "line-width": 2,
+              "line-opacity": 0.75,
+              "line-dasharray": [0.5, 2],
+            },
+          });
+
+          const pointSourceId = `tracking-route-points-source-${index}`;
+          const pointLayerId = `tracking-route-points-layer-${index}`;
+          map.addSource(pointSourceId, {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: group.points.map((point) => ({
+                type: "Feature",
+                properties: {},
+                geometry: {
+                  type: "Point",
+                  coordinates: [point.longitude, point.latitude],
+                },
+              })),
+            },
+          });
+          map.addLayer({
+            id: pointLayerId,
+            type: "circle",
+            source: pointSourceId,
+            paint: {
+              "circle-radius": 4,
+              "circle-color": pathColors[index % pathColors.length],
+              "circle-stroke-color": "#ffffff",
+              "circle-stroke-width": 1,
             },
           });
 
           lineSourceIdsRef.current.push(sourceId);
           lineLayerIdsRef.current.push(layerId);
+          routePointSourceIdsRef.current.push(pointSourceId);
+          routePointLayerIdsRef.current.push(pointLayerId);
         });
       }
 
@@ -784,6 +1009,7 @@ export function TrackingLiveMapPageView() {
   }, [
     animalById,
     clearPathLayers,
+    mapProvider,
     deviceById,
     isMovementMode,
     mapStyleReadyTick,
@@ -791,8 +1017,189 @@ export function TrackingLiveMapPageView() {
     pathGroups,
   ]);
 
+  useEffect(() => {
+    if (playbackAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(playbackAnimationFrameRef.current);
+      playbackAnimationFrameRef.current = null;
+    }
+
+    if (!playbackGroup || playbackGroup.points.length < 2) {
+      playbackMapLibreMarkerRef.current?.remove();
+      playbackMapLibreMarkerRef.current = null;
+      playbackGoogleMarkerRef.current?.setMap(null);
+      playbackGoogleMarkerRef.current = null;
+      return;
+    }
+
+    const points: PlaybackPoint[] = playbackGroup.points.map((point) => ({
+      longitude: point.longitude,
+      latitude: point.latitude,
+    }));
+    const setPosition = (position: PlaybackPoint) => {
+      if (mapProvider === "google" && playbackGoogleMarkerRef.current) {
+        playbackGoogleMarkerRef.current.setPosition({
+          lat: position.latitude,
+          lng: position.longitude,
+        });
+      } else if (playbackMapLibreMarkerRef.current) {
+        playbackMapLibreMarkerRef.current.setLngLat([
+          position.longitude,
+          position.latitude,
+        ]);
+      }
+    };
+
+    const createMarker = async () => {
+      if (mapProvider === "google" && googleMapRef.current) {
+        const googleMaps = getGoogleMapsApi();
+        playbackGoogleMarkerRef.current?.setMap(null);
+        playbackGoogleMarkerRef.current = new googleMaps.maps.Marker({
+          map: googleMapRef.current,
+          position: { lat: points[0].latitude, lng: points[0].longitude },
+          title: "Movement playback",
+          icon: {
+            path: googleMaps.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: "#f97316",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+          },
+        });
+      } else if (mapRef.current) {
+        const maplibregl = await import("maplibre-gl");
+        playbackMapLibreMarkerRef.current?.remove();
+        const element = document.createElement("div");
+        element.className =
+          "h-5 w-5 rounded-full border-2 border-white bg-orange-500 shadow-[0_0_0_6px_rgba(249,115,22,0.25)]";
+        playbackMapLibreMarkerRef.current = new maplibregl.default.Marker({
+          element,
+        })
+          .setLngLat([points[0].longitude, points[0].latitude])
+          .addTo(mapRef.current);
+      }
+
+      setPosition(
+        points[
+          Math.min(
+            points.length - 1,
+            Math.floor(playbackProgressRef.current * points.length),
+          )
+        ] ?? points[0],
+      );
+    };
+
+    void createMarker();
+
+    if (!isPlaybackPlaying) {
+      return () => {
+        if (playbackAnimationFrameRef.current !== null) {
+          cancelAnimationFrame(playbackAnimationFrameRef.current);
+        }
+      };
+    }
+
+    const duration = 12000;
+    const startedAt =
+      performance.now() - playbackProgressRef.current * duration;
+    const animate = (now: number) => {
+      const elapsed = Math.max(0, now - startedAt);
+      const progress = (elapsed % duration) / duration;
+      const scaled = progress * (points.length - 1);
+      const segment = Math.min(
+        points.length - 2,
+        Math.max(0, Math.floor(scaled)),
+      );
+      const segmentProgress = scaled - segment;
+      const start = points[segment];
+      const end = points[segment + 1];
+
+      if (!start || !end) {
+        playbackAnimationFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      playbackProgressRef.current = progress;
+      setPlaybackProgress(progress);
+      setPosition({
+        longitude:
+          start.longitude + (end.longitude - start.longitude) * segmentProgress,
+        latitude:
+          start.latitude + (end.latitude - start.latitude) * segmentProgress,
+      });
+
+      playbackAnimationFrameRef.current = requestAnimationFrame(animate);
+    };
+
+    playbackAnimationFrameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (playbackAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(playbackAnimationFrameRef.current);
+        playbackAnimationFrameRef.current = null;
+      }
+    };
+  }, [isPlaybackPlaying, mapProvider, mapStyleReadyTick, playbackGroup]);
+
+  const openNavigationToLatest = (origin: string) => {
+    if (!selectedNavigationLocation) {
+      setNavigationError("No latest animal location is available.");
+      return;
+    }
+
+    const destination = `${selectedNavigationLocation.latitude},${selectedNavigationLocation.longitude}`;
+    const openDirections = (resolvedOrigin: string) => {
+      const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(resolvedOrigin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    };
+
+    if (origin === "current") {
+      if (!navigator.geolocation) {
+        setNavigationError(
+          "This browser does not provide your current location.",
+        );
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setNavigationError("");
+          openDirections(
+            `${position.coords.latitude},${position.coords.longitude}`,
+          );
+        },
+        () => setNavigationError("Location permission was not granted."),
+        { enableHighAccuracy: true, timeout: 10000 },
+      );
+      return;
+    }
+
+    const coordinates = origin.split(",").map(Number);
+    if (
+      coordinates.length !== 2 ||
+      coordinates.some((coordinate) => Number.isNaN(coordinate)) ||
+      coordinates[0] < -90 ||
+      coordinates[0] > 90 ||
+      coordinates[1] < -180 ||
+      coordinates[1] > 180
+    ) {
+      setNavigationError("Enter the origin as latitude, longitude.");
+      return;
+    }
+
+    setNavigationError("");
+    openDirections(origin.trim());
+  };
+
   const rotateMap = () => {
     const map = mapRef.current;
+
+    if (googleMapRef.current) {
+      googleMapRef.current.setHeading(
+        ((googleMapRef.current.getHeading() ?? 0) + 45) % 360,
+      );
+      return;
+    }
 
     if (!map) {
       return;
@@ -1087,7 +1494,11 @@ export function TrackingLiveMapPageView() {
             </button>
             <button
               type="button"
-              disabled={!mapStyleConfig.hasSatellite}
+              disabled={
+                mapProvider === "google"
+                  ? !hasGoogleMapsKey()
+                  : !mapStyleConfig.hasSatellite
+              }
               onClick={() => setMapViewMode("satellite")}
               className={`flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
                 mapViewMode === "satellite"
@@ -1095,9 +1506,11 @@ export function TrackingLiveMapPageView() {
                   : "text-[var(--color-mist)] hover:bg-white/10"
               } disabled:cursor-not-allowed disabled:opacity-60`}
               title={
-                mapStyleConfig.hasSatellite
-                  ? "Satellite view with labels"
-                  : "Satellite view requires NEXT_PUBLIC_MAPTILER_API_KEY"
+                mapProvider === "google"
+                  ? "Satellite view with Google hybrid imagery"
+                  : mapStyleConfig.hasSatellite
+                    ? "Satellite view with labels"
+                    : "Satellite view requires NEXT_PUBLIC_MAPTILER_API_KEY"
               }
               aria-label="Satellite view"
             >
@@ -1112,11 +1525,123 @@ export function TrackingLiveMapPageView() {
             >
               <span className="pi pi-refresh text-sm" aria-hidden="true" />
             </button>
+            <MapProviderSelector className="ml-1" />
           </div>
+
+          {isMovementMode && playbackGroup ? (
+            <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center gap-3 rounded-xl border border-white/20 bg-[rgba(7,22,32,0.82)] p-3 text-xs backdrop-blur-sm">
+              <label className="flex items-center gap-2 text-[var(--color-mist)]">
+                <span>Playback</span>
+                <select
+                  value={playbackGroup.animalId}
+                  onChange={(event) => {
+                    setPlaybackAnimalId(event.target.value);
+                    playbackProgressRef.current = 0;
+                    setPlaybackProgress(0);
+                    setIsPlaybackPlaying(false);
+                  }}
+                  className="rounded-md border border-white/15 bg-black/40 px-2 py-1 text-[var(--color-ice)]"
+                  aria-label="Animal movement playback"
+                >
+                  {pathGroups.map((group) => (
+                    <option key={group.animalId} value={group.animalId}>
+                      {animalById.get(group.animalId)?.animalNumber ??
+                        group.animalId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  if (playbackProgress >= 1) {
+                    playbackProgressRef.current = 0;
+                    setPlaybackProgress(0);
+                  }
+                  setIsPlaybackPlaying((playing) => !playing);
+                }}
+                className="rounded-md border border-orange-300/40 bg-orange-500/20 px-3 py-1.5 font-semibold text-orange-100 hover:bg-orange-500/30"
+              >
+                {isPlaybackPlaying
+                  ? "Pause"
+                  : playbackProgress >= 1
+                    ? "Replay"
+                    : "Play movement"}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.001"
+                value={playbackProgress}
+                onChange={(event) => {
+                  const nextProgress = Number(event.target.value);
+                  playbackProgressRef.current = nextProgress;
+                  setPlaybackProgress(nextProgress);
+                }}
+                className="min-w-[9rem] flex-1 accent-orange-400"
+                aria-label="Movement playback position"
+              />
+              <span className="text-[var(--color-fog)]">Animated path</span>
+            </div>
+          ) : null}
 
           <div ref={mapContainerRef} className="h-[35rem] w-full" />
         </div>
       </div>
+
+      <section className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-[14rem] flex-1 text-xs text-[var(--color-mist)]">
+            <span className="mb-1 block font-semibold uppercase tracking-[0.1em]">
+              Navigate to latest animal location
+            </span>
+            <select
+              value={playbackAnimalId}
+              onChange={(event) => setPlaybackAnimalId(event.target.value)}
+              className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-[var(--color-ice)]"
+              aria-label="Animal latest location"
+            >
+              <option value="">Latest available animal</option>
+              {latestLocations.map((location) => (
+                <option key={location.animalId} value={location.animalId}>
+                  {animalById.get(location.animalId)?.animalNumber ??
+                    location.animalId}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => openNavigationToLatest("current")}
+            className="rounded-lg border border-cyan-300/35 bg-cyan-500/15 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/25"
+          >
+            Use my location
+          </button>
+          <input
+            value={navigationOrigin}
+            onChange={(event) => setNavigationOrigin(event.target.value)}
+            placeholder="Origin latitude, longitude"
+            className="min-w-[13rem] flex-1 rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-[var(--color-ice)] placeholder:text-[var(--color-fog)]"
+            aria-label="Navigation origin coordinates"
+          />
+          <button
+            type="button"
+            onClick={() => openNavigationToLatest(navigationOrigin)}
+            className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold text-[var(--color-ice)] hover:bg-white/15"
+          >
+            Use origin
+          </button>
+        </div>
+        {navigationError ? (
+          <p className="mt-2 text-xs text-rose-300">{navigationError}</p>
+        ) : (
+          <p className="mt-2 text-xs text-[var(--color-fog)]">
+            Opens turn-by-turn directions in Google Maps to the selected
+            animal&apos;s latest position.
+          </p>
+        )}
+      </section>
 
       {!rows.length ? (
         <DataPanel

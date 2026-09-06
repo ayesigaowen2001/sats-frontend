@@ -6,7 +6,16 @@ import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 import { PageNumbers } from "@/components/common/pagination";
 import { DataPanel } from "@/components/data-panel";
 import { DataTable } from "@/components/data-table";
+import { MapProviderSelector } from "@/components/map-provider-selector";
 import { getSessionData } from "@/lib/auth-tokens";
+import {
+  getGoogleMapsApi,
+  type GoogleMap,
+  type GoogleMarker,
+  type GooglePolygon,
+  loadGoogleMaps,
+  useMapProvider,
+} from "@/lib/maps/map-provider";
 import { animalsService } from "@/lib/animals/animals-service";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
 import {
@@ -146,6 +155,9 @@ function buildPopupHtml(event: GeofenceEventRecord) {
 export function TrackingGeofenceEventsPageView(): React.JSX.Element {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const googleMapRef = useRef<GoogleMap | null>(null);
+  const googleMarkersRef = useRef<GoogleMarker[]>([]);
+  const googlePolygonsRef = useRef<GooglePolygon[]>([]);
   const markerRefs = useRef<MapLibreMarker[]>([]);
   const geofenceSourceIdRef = useRef("geofence-events-polygons-source");
   const geofenceFillLayerIdRef = useRef("geofence-events-polygons-fill");
@@ -178,6 +190,7 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
   const [pagination, setPagination] = useState<GeofenceEventPagination | null>(
     null,
   );
+  const mapProvider = useMapProvider();
   const [mapReadyTick, setMapReadyTick] = useState(0);
 
   useEffect(() => {
@@ -430,6 +443,36 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
         return;
       }
 
+      if (mapProvider === "google") {
+        try {
+          const googleMaps = await loadGoogleMaps();
+
+          if (!active || !mapContainerRef.current) {
+            return;
+          }
+
+          googleMapRef.current = new googleMaps.maps.Map(
+            mapContainerRef.current,
+            {
+              center: { lat: 0.3482, lng: 32.5831 },
+              zoom: 7,
+              mapTypeControl: true,
+              streetViewControl: false,
+              fullscreenControl: true,
+            },
+          );
+          setMapReadyTick((current) => current + 1);
+          return;
+        } catch (requestError) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Failed to load Google Maps.",
+          );
+          return;
+        }
+      }
+
       const maplibregl = (await import("maplibre-gl")).default;
       const mapTilerKey = process.env.NEXT_PUBLIC_MAPTILER_API_KEY;
       const styleUrl = mapTilerKey
@@ -468,8 +511,17 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
         mapRef.current.remove();
         mapRef.current = null;
       }
+
+      googleMarkersRef.current.forEach((marker) => marker.setMap(null));
+      googleMarkersRef.current = [];
+      googlePolygonsRef.current.forEach((polygon) => polygon.setMap(null));
+      googlePolygonsRef.current = [];
+      googleMapRef.current = null;
+      if (mapContainerRef.current) {
+        mapContainerRef.current.innerHTML = "";
+      }
     };
-  }, []);
+  }, [mapProvider]);
 
   useEffect(() => {
     void loadGeofenceEvents();
@@ -477,6 +529,29 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
 
   useEffect(() => {
     const map = mapRef.current;
+
+    googlePolygonsRef.current.forEach((polygon) => polygon.setMap(null));
+    googlePolygonsRef.current = [];
+
+    if (!map && googleMapRef.current) {
+      geofenceOptions.forEach((geofence) => {
+        const googleMaps = getGoogleMapsApi();
+        const polygon = new googleMaps.maps.Polygon({
+          paths: geofence.boundary.coordinates?.[0]?.map(([lng, lat]) => ({
+            lat,
+            lng,
+          })),
+          strokeColor: "#22d3ee",
+          strokeOpacity: 0.9,
+          strokeWeight: 2,
+          fillColor: "#06b6d4",
+          fillOpacity: 0.1,
+          map: googleMapRef.current,
+        });
+        googlePolygonsRef.current.push(polygon);
+      });
+      return;
+    }
 
     if (!map) {
       return;
@@ -564,10 +639,39 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
         map.removeSource(sourceId);
       }
     };
-  }, [geofenceOptions, mapReadyTick]);
+  }, [geofenceOptions, mapProvider, mapReadyTick]);
 
   useEffect(() => {
     const map = mapRef.current;
+
+    googleMarkersRef.current.forEach((marker) => marker.setMap(null));
+    googleMarkersRef.current = [];
+
+    if (!map && googleMapRef.current) {
+      if (!rows.length) {
+        return;
+      }
+
+      const googleMaps = getGoogleMapsApi();
+      const bounds = new googleMaps.maps.LatLngBounds();
+      rows.forEach((eventItem) => {
+        const marker = new googleMaps.maps.Marker({
+          position: { lat: eventItem.latitude, lng: eventItem.longitude },
+          map: googleMapRef.current,
+          title: eventItem.status,
+        });
+        marker.addListener("click", () => {
+          const infoWindow = new googleMaps.maps.InfoWindow({
+            content: buildPopupHtml(eventItem),
+          });
+          infoWindow.open({ map: googleMapRef.current!, anchor: marker });
+        });
+        googleMarkersRef.current.push(marker);
+        bounds.extend(marker.getPosition()!);
+      });
+      googleMapRef.current.fitBounds(bounds, 60);
+      return;
+    }
 
     if (!map) {
       return;
@@ -628,7 +732,7 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [rows]);
+  }, [mapProvider, rows]);
 
   const applyFilters = (nextFilters: GeofenceEventsFilterValues) => {
     const normalized = normalizeFilterValues(nextFilters);
@@ -940,6 +1044,7 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
               {status}
             </span>
           ))}
+          <MapProviderSelector className="ml-auto" />
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">

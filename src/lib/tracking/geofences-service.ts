@@ -169,7 +169,7 @@ async function getApiErrorMessage(
 }
 
 export class GeofencesService {
-  private createHeaders(includeJson = true, organizationId?: string) {
+  private createHeaders(includeJson = true) {
     const headers = new Headers({
       Accept: "application/json",
     });
@@ -182,10 +182,6 @@ export class GeofencesService {
 
     if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
-    }
-
-    if (organizationId) {
-      headers.set("organization_id", organizationId);
     }
 
     return headers;
@@ -242,7 +238,7 @@ export class GeofencesService {
       `${appConfig.apiBaseUrl}/organisations/${encodeURIComponent(orgId)}/geofences`,
       {
         method: "POST",
-        headers: this.createHeaders(true, orgId),
+        headers: this.createHeaders(true),
         body: JSON.stringify(input),
       },
     );
