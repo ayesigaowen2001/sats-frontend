@@ -5,7 +5,6 @@ import { DeviceBatteryLogsPageView } from "@/components/device-battery-logs-page
 import { DeviceCategoriesPageView } from "@/components/device-categories-page-view";
 import { DeviceSpecificationsPageView } from "@/components/device-specifications-page-view";
 import { SensorLibraryPageView } from "@/components/sensor-library-page-view";
-import { ModuleSectionPage } from "@/components/module-section-page";
 import { hasModuleSection } from "@/lib/dashboard-config";
 
 export default async function DeviceSectionPage({
@@ -39,5 +38,5 @@ export default async function DeviceSectionPage({
     return <DeviceBatteryLogsPageView />;
   }
 
-  return <ModuleSectionPage pathname={`/device/${section}`} />;
+  notFound();
 }

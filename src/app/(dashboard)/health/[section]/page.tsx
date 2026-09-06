@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 
-import { ModuleSectionPage } from "@/components/module-section-page";
 import { hasModuleSection } from "@/lib/dashboard-config";
 
 export default async function HealthSectionPage({
@@ -14,5 +13,5 @@ export default async function HealthSectionPage({
     notFound();
   }
 
-  return <ModuleSectionPage pathname={`/health/${section}`} />;
+  notFound();
 }

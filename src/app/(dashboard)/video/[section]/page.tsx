@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { VideoArchivePageView } from "@/components/video-archive-page-view";
 import { VideoCamerasPageView } from "@/components/video-monitoring-cameras-page-view";
 import { VideoLiveStreamPageView } from "@/components/video-live-stream-page-view";
-import { ModuleSectionPage } from "@/components/module-section-page";
 import { hasModuleSection } from "@/lib/dashboard-config";
 
 export default async function VideoSectionPage({
@@ -29,5 +28,5 @@ export default async function VideoSectionPage({
     return <VideoLiveStreamPageView />;
   }
 
-  return <ModuleSectionPage pathname={`/video/${section}`} />;
+  notFound();
 }

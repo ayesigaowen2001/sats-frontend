@@ -148,22 +148,27 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
   }
 
   return (
-    <div className="flex min-h-screen bg-[var(--color-night)] text-[var(--color-ice)]">
-      {isModuleHub ? null : (
-        <Sidebar
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
-        />
-      )}
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <Topbar
-          showSidebarToggle={!isModuleHub && !isSidebarOpen}
-          onSidebarOpen={() => setIsSidebarOpen(true)}
-        />
-        <main className="min-w-0 flex-1 overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
-          <PageErrorBoundary>{children}</PageErrorBoundary>
-        </main>
+    <div className="flex min-h-screen flex-col bg-[var(--color-night)] text-[var(--color-ice)]">
+      <div className="flex min-h-0 flex-1">
+        {isModuleHub ? null : (
+          <Sidebar
+            isOpen={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
+          />
+        )}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <Topbar
+            showSidebarToggle={!isModuleHub && !isSidebarOpen}
+            onSidebarOpen={() => setIsSidebarOpen(true)}
+          />
+          <main className="min-w-0 flex-1 overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
+            <PageErrorBoundary>{children}</PageErrorBoundary>
+          </main>
+        </div>
       </div>
+      <footer className="border-t border-[var(--color-shell-border)] px-4 py-4 text-center text-xs text-[var(--color-fog)] sm:px-6">
+        Copyright SATS @2025
+      </footer>
     </div>
   );
 }
