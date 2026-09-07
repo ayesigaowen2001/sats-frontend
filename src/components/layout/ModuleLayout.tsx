@@ -7,14 +7,15 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { ForbiddenView } from "@/components/forbidden-view";
 import { PageErrorBoundary } from "@/components/page-error-boundary";
-import { ResourceFeedback } from "@/components/resource-feedback";
 import { PageLoader } from "@/components/common/page-loader";
 import {
   getDashboardModule,
   getDefaultSidebarItem,
 } from "@/lib/dashboard-config";
 import {
+  getAccessToken,
   getSessionData,
+  isTokenExpired,
   setSessionPermissions,
   type SessionData,
 } from "@/lib/auth-tokens";
@@ -36,12 +37,19 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
   const isModuleHub = pathname === "/" || pathname === "/apps";
   const currentModule = getDashboardModule(pathname);
   const defaultSidebarItem = getDefaultSidebarItem(pathname);
+  const hasValidAuthentication = Boolean(
+    sessionData?.accessToken?.trim() &&
+    getAccessToken().trim() &&
+    !isTokenExpired(),
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
+    // Session data is browser-only and must be loaded after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSessionData(getSessionData());
     setHasHydrated(true);
 
@@ -55,12 +63,15 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
       return;
     }
 
-    if (!sessionData) {
-      setPermissionsReady(true);
+    if (!hasValidAuthentication || !sessionData) {
+      const nextPath = pathname || "/";
+      router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
       return;
     }
 
     if (typeof sessionData.permissions !== "undefined") {
+      // Permissions are already hydrated in the stored session.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPermissionsReady(true);
       return;
     }
@@ -89,10 +100,12 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
     return () => {
       isActive = false;
     };
-  }, [hasHydrated, sessionData]);
+  }, [hasHydrated, hasValidAuthentication, pathname, router, sessionData]);
 
   useEffect(() => {
     if (isModuleHub) {
+      // Keep the hub closed when switching away from module navigation.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsSidebarOpen(false);
     }
   }, [isModuleHub]);
@@ -114,17 +127,12 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
     }
   }, [currentModule.href, defaultSidebarItem, isModuleHub, pathname, router]);
 
-  if (!hasHydrated || !permissionsReady) {
+  if (!hasHydrated || !hasValidAuthentication || !permissionsReady) {
     return <PageLoader />;
   }
 
   if (!sessionData) {
-    return (
-      <ResourceFeedback
-        title="Access required"
-        detail="Sign in to view this workspace."
-      />
-    );
+    return <PageLoader />;
   }
 
   if (

@@ -61,6 +61,7 @@ interface AnimalOption {
 
 interface DeviceOption {
   id: string;
+  deviceNumber: string;
   deviceSerial: string;
 }
 
@@ -224,6 +225,7 @@ export function TrackingLiveMapPageView() {
 
     organizationDeviceOptions.forEach((device) => {
       byAnyKey.set(device.id, device);
+      byAnyKey.set(device.deviceNumber, device);
       byAnyKey.set(device.deviceSerial, device);
     });
 
@@ -280,6 +282,7 @@ export function TrackingLiveMapPageView() {
 
     return organizationDeviceOptions.filter(
       (option) =>
+        option.deviceNumber.toLowerCase().includes(query) ||
         option.deviceSerial.toLowerCase().includes(query) ||
         option.id.toLowerCase().includes(query),
     );
@@ -481,9 +484,10 @@ export function TrackingLiveMapPageView() {
           deviceOptions = devices
             .map((device) => ({
               id: device.id,
+              deviceNumber: device.deviceNumber,
               deviceSerial: device.deviceSerial,
             }))
-            .sort((a, b) => a.deviceSerial.localeCompare(b.deviceSerial));
+            .sort((a, b) => a.deviceNumber.localeCompare(b.deviceNumber));
 
           setOrganizationAnimalOptions(animalOptions);
           setOrganizationDeviceOptions(deviceOptions);
@@ -493,7 +497,11 @@ export function TrackingLiveMapPageView() {
           animalOptions.flatMap((animal) => [animal.id, animal.animalNumber]),
         );
         const organizationDeviceKeySet = new Set(
-          deviceOptions.flatMap((device) => [device.id, device.deviceSerial]),
+          deviceOptions.flatMap((device) => [
+            device.id,
+            device.deviceNumber,
+            device.deviceSerial,
+          ]),
         );
 
         scopedItems = response.items.filter(
@@ -636,9 +644,10 @@ export function TrackingLiveMapPageView() {
           devices
             .map((device) => ({
               id: device.id,
+              deviceNumber: device.deviceNumber,
               deviceSerial: device.deviceSerial,
             }))
-            .sort((a, b) => a.deviceSerial.localeCompare(b.deviceSerial)),
+            .sort((a, b) => a.deviceNumber.localeCompare(b.deviceNumber)),
         );
       } catch (requestError) {
         if (!isMounted) {
@@ -1330,6 +1339,8 @@ export function TrackingLiveMapPageView() {
                     (option) =>
                       option.id.toLowerCase() ===
                         nextValue.trim().toLowerCase() ||
+                      option.deviceNumber.toLowerCase() ===
+                        nextValue.trim().toLowerCase() ||
                       option.deviceSerial.toLowerCase() ===
                         nextValue.trim().toLowerCase(),
                   );
@@ -1337,7 +1348,7 @@ export function TrackingLiveMapPageView() {
                   setDeviceSearch(nextValue);
                   setFilters((current) => ({
                     ...current,
-                    device_number: matched?.deviceSerial ?? nextValue,
+                    device_number: matched?.deviceNumber ?? nextValue,
                     page: "1",
                   }));
                 }}
@@ -1348,8 +1359,8 @@ export function TrackingLiveMapPageView() {
                 {filteredDeviceOptions.map((device) => (
                   <option
                     key={device.id}
-                    value={device.deviceSerial}
-                    label={device.id}
+                    value={device.deviceNumber}
+                    label={`${device.deviceSerial} (${device.id})`}
                   />
                 ))}
               </datalist>
@@ -1661,6 +1672,7 @@ export function TrackingLiveMapPageView() {
         >
           <DataTable
             rows={rows}
+            pagination={false}
             horizontalScroll
             minColumnWidthRem={10}
             columns={[

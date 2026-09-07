@@ -113,8 +113,8 @@ export function OrganizationLogo({
     <img
       src={logoUrl}
       alt={isSystemAdmin ? "SATS platform logo" : "Organization logo"}
-      className={`object-contain ${className}`}
-      style={{ maxHeight }}
+      className={`rounded-full object-cover ${className}`}
+      style={{ width: maxHeight, height: maxHeight, maxHeight }}
       onError={() => setImgError(true)}
       {...imgProps}
     />

@@ -55,8 +55,20 @@ export function PageNumbers({
   const sizeClasses =
     size === "sm" ? "h-7 min-w-7 px-2 text-xs" : "h-9 min-w-9 px-3 text-sm";
 
+  const adjacentButtonClasses = `${sizeClasses} rounded-lg border font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 border-white/10 bg-white/5 text-[var(--color-mist)] hover:border-white/25 hover:bg-white/10 hover:text-[var(--color-ice)]`;
+
   return (
     <nav className="flex flex-wrap items-center justify-center gap-1.5">
+      <button
+        type="button"
+        disabled={disabled || currentPage <= 1}
+        onClick={() => onPageChange(currentPage - 1)}
+        className={adjacentButtonClasses}
+        aria-label="Previous page"
+        title="Previous page"
+      >
+        <span className="pi pi-chevron-left" aria-hidden="true" />
+      </button>
       {items.map((item, index) => {
         if (item === "ellipsis-start" || item === "ellipsis-end") {
           return (
@@ -89,6 +101,16 @@ export function PageNumbers({
           </button>
         );
       })}
+      <button
+        type="button"
+        disabled={disabled || currentPage >= totalPages}
+        onClick={() => onPageChange(currentPage + 1)}
+        className={adjacentButtonClasses}
+        aria-label="Next page"
+        title="Next page"
+      >
+        <span className="pi pi-chevron-right" aria-hidden="true" />
+      </button>
     </nav>
   );
 }
