@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PageNumbers } from "@/components/common/pagination";
 import { ResourceFeedback } from "@/components/resource-feedback";
+import { animalsService } from "@/lib/animals/animals-service";
+import {
+  devicesService,
+  type DeviceRecord,
+} from "@/lib/devices/devices-service";
 import { getSessionData } from "@/lib/auth-tokens";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
 import {
@@ -216,6 +221,8 @@ export function VideoArchivePageView(): React.JSX.Element {
 
   const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState("");
+  const [animalOptions, setAnimalOptions] = useState<string[]>([]);
+  const [deviceOptions, setDeviceOptions] = useState<string[]>([]);
 
   const [filters, setFilters] = useState<FilterFormValues>(defaultFilterValues);
   const [page, setPage] = useState(1);
@@ -315,6 +322,53 @@ export function VideoArchivePageView(): React.JSX.Element {
       isMounted = false;
     };
   }, [isSystemAdmin, user?.organizationId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadOrganizationOptions = async () => {
+      if (!activeOrgId) {
+        setAnimalOptions([]);
+        setDeviceOptions([]);
+        return;
+      }
+
+      const [animalsResult, devicesResult] = await Promise.allSettled([
+        animalsService.listAnimals(activeOrgId, { page: 1, per_page: 100 }),
+        devicesService.listDevicesByOrganization(activeOrgId),
+      ]);
+
+      if (!isMounted) {
+        return;
+      }
+
+      setAnimalOptions(
+        animalsResult.status === "fulfilled"
+          ? animalsResult.value.items
+              .map((animal) => animal.animalNumber)
+              .filter(Boolean)
+              .sort((a, b) => a.localeCompare(b))
+          : [],
+      );
+      setDeviceOptions(
+        devicesResult.status === "fulfilled"
+          ? devicesResult.value
+              .map(
+                (device: DeviceRecord) =>
+                  device.deviceNumber || device.deviceSerial,
+              )
+              .filter(Boolean)
+              .sort((a, b) => a.localeCompare(b))
+          : [],
+      );
+    };
+
+    void loadOrganizationOptions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeOrgId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -664,8 +718,7 @@ export function VideoArchivePageView(): React.JSX.Element {
           onSubmit={applyFilters}
           className="grid gap-3 rounded-2xl border border-[var(--color-shell-border)] p-4 sm:grid-cols-2 lg:grid-cols-5"
         >
-          <input
-            type="text"
+          <select
             value={filters.device_number}
             onChange={(event) =>
               setFilters((prev) => ({
@@ -673,11 +726,16 @@ export function VideoArchivePageView(): React.JSX.Element {
                 device_number: event.target.value,
               }))
             }
-            placeholder="Device number"
             className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm"
-          />
-          <input
-            type="text"
+          >
+            <option value="">All device numbers</option>
+            {deviceOptions.map((deviceNumber) => (
+              <option key={deviceNumber} value={deviceNumber}>
+                {deviceNumber}
+              </option>
+            ))}
+          </select>
+          <select
             value={filters.animal_number}
             onChange={(event) =>
               setFilters((prev) => ({
@@ -685,9 +743,15 @@ export function VideoArchivePageView(): React.JSX.Element {
                 animal_number: event.target.value,
               }))
             }
-            placeholder="Animal number"
             className="rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 text-sm"
-          />
+          >
+            <option value="">All animal numbers</option>
+            {animalOptions.map((animalNumber) => (
+              <option key={animalNumber} value={animalNumber}>
+                {animalNumber}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={filters.activity}

@@ -1071,6 +1071,7 @@ export function TrackingGeofenceEventsPageView(): React.JSX.Element {
         >
           <DataTable
             rows={rows}
+            pagination={false}
             horizontalScroll
             minColumnWidthRem={10}
             columns={[

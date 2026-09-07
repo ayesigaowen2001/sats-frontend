@@ -358,6 +358,7 @@ export function DeviceBatteryLogsPageView(): React.JSX.Element {
       >
         <DataTable
           rows={rows}
+          pagination={false}
           horizontalScroll
           columns={[
             {

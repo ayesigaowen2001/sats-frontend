@@ -687,6 +687,7 @@ export function AllAnimalsPageView() {
         <>
           <DataTable
             rows={rows}
+            pagination={false}
             horizontalScroll
             columns={[
               { header: "Animal #", render: (row) => row.animalNumber },
