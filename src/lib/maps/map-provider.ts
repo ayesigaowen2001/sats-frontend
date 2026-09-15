@@ -8,6 +8,11 @@ const MAP_PROVIDER_STORAGE_KEY = "sats-map-provider";
 const mapProviderListeners = new Set<() => void>();
 let googleMapsPromise: Promise<typeof google> | null = null;
 
+function handleGoogleMapsAuthFailure(): void {
+  googleMapsPromise = null;
+  setMapProvider("maptiler");
+}
+
 export type GoogleMapsApi = typeof google;
 export type GoogleMap = InstanceType<GoogleMapsApi["maps"]["Map"]>;
 export type GoogleMarker = InstanceType<GoogleMapsApi["maps"]["Marker"]>;
@@ -54,7 +59,7 @@ export function useMapProvider(): MapProvider {
 }
 
 export async function loadGoogleMaps(): Promise<typeof google> {
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
 
   if (!key) {
     throw new Error(
@@ -63,6 +68,10 @@ export async function loadGoogleMaps(): Promise<typeof google> {
   }
 
   if (!googleMapsPromise) {
+    const googleGlobal = globalThis as typeof globalThis & {
+      gm_authFailure?: () => void;
+    };
+    googleGlobal.gm_authFailure = handleGoogleMapsAuthFailure;
     setOptions({ key, v: "weekly" });
     googleMapsPromise = Promise.all([
       importLibrary("maps"),

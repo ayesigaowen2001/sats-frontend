@@ -102,6 +102,62 @@ function formatDateTime(value: string | null) {
   return parsed.toLocaleString();
 }
 
+function calculateBearing(
+  startLongitude: number,
+  startLatitude: number,
+  endLongitude: number,
+  endLatitude: number,
+): number {
+  const startLat = (startLatitude * Math.PI) / 180;
+  const endLat = (endLatitude * Math.PI) / 180;
+  const longitudeDelta = ((endLongitude - startLongitude) * Math.PI) / 180;
+  const y = Math.sin(longitudeDelta) * Math.cos(endLat);
+  const x =
+    Math.cos(startLat) * Math.sin(endLat) -
+    Math.sin(startLat) * Math.cos(endLat) * Math.cos(longitudeDelta);
+
+  return (Math.atan2(y, x) * 180) / Math.PI + 360;
+}
+
+function getTrackBearing(
+  pointIndex: number,
+  points: TrackingLogRecord[],
+): number {
+  const point = points[pointIndex];
+  const nextPoint = points[pointIndex + 1];
+  const previousPoint = points[pointIndex - 1];
+  const referencePoint = nextPoint ?? previousPoint;
+
+  if (!referencePoint) {
+    return 0;
+  }
+
+  return nextPoint
+    ? calculateBearing(
+        point.longitude,
+        point.latitude,
+        referencePoint.longitude,
+        referencePoint.latitude,
+      )
+    : calculateBearing(
+        referencePoint.longitude,
+        referencePoint.latitude,
+        point.longitude,
+        point.latitude,
+      );
+}
+
+function createTrackArrowElement(
+  color: string,
+): HTMLDivElement {
+  const element = document.createElement("div");
+  element.className = "h-5 w-5 border border-white/90 shadow";
+  element.style.backgroundColor = color;
+  element.style.clipPath = "polygon(50% 0%, 100% 100%, 50% 76%, 0% 100%)";
+  element.style.cursor = "pointer";
+  return element;
+}
+
 function toIsoTimestamp(value: string): string {
   const normalized = value.trim();
 
@@ -837,32 +893,35 @@ export function TrackingLiveMapPageView() {
             map: googleMapRef.current,
           });
           googlePolylineRefs.current.push(polyline);
-
-          group.points.forEach((point, pointIndex) => {
-            const marker = new googleMaps.maps.Marker({
-              position: { lat: point.latitude, lng: point.longitude },
-              map: googleMapRef.current,
-              title: `Movement point ${pointIndex + 1}`,
-              icon: {
-                path: googleMaps.maps.SymbolPath.CIRCLE,
-                scale: 3.5,
-                fillColor: pathColors[index % pathColors.length],
-                fillOpacity: 1,
-                strokeColor: "#ffffff",
-                strokeWeight: 1,
-              },
-            });
-            googleRoutePointRefs.current.push(marker);
-          });
         });
       }
 
       const latestId = mapRows[mapRows.length - 1]?.id ?? "";
       mapRows.forEach((log) => {
+        const groupIndex = pathGroups.findIndex(
+          (group) => group.animalId === log.animalId,
+        );
+        const group = groupIndex >= 0 ? pathGroups[groupIndex] : undefined;
+        const pointIndex =
+          group?.points.findIndex((point) => point.id === log.id) ?? -1;
         const marker = new googleMaps.maps.Marker({
           position: { lat: log.latitude, lng: log.longitude },
           map: googleMapRef.current,
           title: log.id === latestId ? "Latest position" : "Tracking position",
+          icon: isMovementMode
+            ? {
+                path: googleMaps.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                scale: 5,
+                rotation: getTrackBearing(
+                  Math.max(pointIndex, 0),
+                  group?.points ?? [log],
+                ),
+                fillColor: pathColors[groupIndex % pathColors.length],
+                fillOpacity: 1,
+                strokeColor: "#ffffff",
+                strokeWeight: 1,
+              }
+            : undefined,
         });
         marker.addListener("click", () => {
           const animal = animalById.get(log.animalId) ?? null;
@@ -937,38 +996,8 @@ export function TrackingLiveMapPageView() {
             },
           });
 
-          const pointSourceId = `tracking-route-points-source-${index}`;
-          const pointLayerId = `tracking-route-points-layer-${index}`;
-          map.addSource(pointSourceId, {
-            type: "geojson",
-            data: {
-              type: "FeatureCollection",
-              features: group.points.map((point) => ({
-                type: "Feature",
-                properties: {},
-                geometry: {
-                  type: "Point",
-                  coordinates: [point.longitude, point.latitude],
-                },
-              })),
-            },
-          });
-          map.addLayer({
-            id: pointLayerId,
-            type: "circle",
-            source: pointSourceId,
-            paint: {
-              "circle-radius": 4,
-              "circle-color": pathColors[index % pathColors.length],
-              "circle-stroke-color": "#ffffff",
-              "circle-stroke-width": 1,
-            },
-          });
-
           lineSourceIdsRef.current.push(sourceId);
           lineLayerIdsRef.current.push(layerId);
-          routePointSourceIdsRef.current.push(pointSourceId);
-          routePointLayerIdsRef.current.push(pointLayerId);
         });
       }
 
@@ -983,17 +1012,40 @@ export function TrackingLiveMapPageView() {
       mapRows.forEach((log) => {
         const animal = animalById.get(log.animalId) ?? null;
         const device = deviceById.get(log.deviceId) ?? null;
-        const element = document.createElement("div");
-        element.className =
-          "h-3.5 w-3.5 rounded-full border border-white/90 shadow";
-        element.style.backgroundColor =
-          log.id === latestId ? "#f97316" : "#22c55e";
+        const groupIndex = pathGroups.findIndex(
+          (group) => group.animalId === log.animalId,
+        );
+        const group = groupIndex >= 0 ? pathGroups[groupIndex] : undefined;
+        const pointIndex =
+          group?.points.findIndex((point) => point.id === log.id) ?? -1;
+        const color =
+          isMovementMode && group
+            ? pathColors[groupIndex % pathColors.length]
+            : log.id === latestId
+              ? "#f97316"
+              : "#22c55e";
+        const bearing = getTrackBearing(
+          Math.max(pointIndex, 0),
+          group?.points ?? [log],
+        );
+        const element = isMovementMode
+          ? createTrackArrowElement(color)
+          : document.createElement("div");
+        if (!isMovementMode) {
+          element.className =
+            "h-3.5 w-3.5 rounded-full border border-white/90 shadow";
+          element.style.backgroundColor = color;
+        }
 
         const popup = new maplibregl.Popup({ offset: 16 }).setHTML(
           buildPopupHtml(log, animal, device),
         );
 
-        const marker = new maplibregl.Marker({ element })
+        const marker = new maplibregl.Marker({
+          element,
+          rotation: isMovementMode ? bearing : 0,
+          rotationAlignment: "map",
+        })
           .setLngLat([log.longitude, log.latitude])
           .setPopup(popup)
           .addTo(map);
@@ -1658,7 +1710,7 @@ export function TrackingLiveMapPageView() {
         <DataPanel
           eyebrow="Tracking records"
           title="No tracking logs found"
-          description="Adjust your filters and load tracking logs to visualize pushpins and movement paths."
+          description="Adjust your filters and load tracking logs to visualize directional movement arrows and paths."
         >
           <p className="text-sm text-[var(--color-mist)]">
             The map is ready and updates immediately when records are returned.

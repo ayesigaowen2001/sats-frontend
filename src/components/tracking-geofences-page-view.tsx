@@ -385,6 +385,13 @@ interface GoogleMapMouseEvent {
   latLng: { toJSON: () => GoogleLatLngLiteral } | null;
 }
 
+interface MapPointerEvent {
+  lngLat?: {
+    lng: number;
+    lat: number;
+  };
+}
+
 interface DrawEvent {
   features?: DrawFeature[];
 }
@@ -399,10 +406,20 @@ type MapInstance = {
   getLayer: (id: string) => unknown;
   removeLayer: (id: string) => void;
   setStyle: (style: string) => void;
-  on: (eventName: string, callback: (event?: DrawEvent) => void) => void;
-  off: (eventName: string, callback: (event?: DrawEvent) => void) => void;
+  on: (
+    eventName: string,
+    callback: (event?: DrawEvent | MapPointerEvent) => void,
+  ) => void;
+  off: (
+    eventName: string,
+    callback: (event?: DrawEvent | MapPointerEvent) => void,
+  ) => void;
   doubleClickZoom?: {
     disable: () => void;
+  };
+  dragPan?: {
+    disable: () => void;
+    enable: () => void;
   };
   remove: () => void;
 };
@@ -468,9 +485,13 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   const mapRef = useRef<MapInstance | null>(null);
   const googleMapRef = useRef<GoogleMap | null>(null);
   const googlePolygonRef = useRef<GooglePolygon | null>(null);
+  const googleLoadedPolygonRefs = useRef<GooglePolygon[]>([]);
   const googleDrawingManagerRef = useRef<GoogleDrawingController | null>(null);
   const activeMapStyleRef = useRef<MapViewMode>("streets");
   const drawRef = useRef<DrawInstance | null>(null);
+  const freehandDrawingEnabledRef = useRef(false);
+  const freehandDrawingRef = useRef(false);
+  const freehandPointsRef = useRef<number[][]>([]);
   const geofenceSourceIdRef = useRef("geofence-polygons-source");
   const geofenceFillLayerIdRef = useRef("geofence-polygons-fill");
   const geofenceLineLayerIdRef = useRef("geofence-polygons-line");
@@ -596,6 +617,9 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
 
   const clearGeofencePolygonLayers = useCallback(() => {
     const map = mapRef.current;
+
+    googleLoadedPolygonRefs.current.forEach((polygon) => polygon.setMap(null));
+    googleLoadedPolygonRefs.current = [];
 
     if (!map) {
       return;
@@ -951,13 +975,16 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
     }
 
     try {
-      draw.changeMode("draw_polygon");
+      freehandDrawingEnabledRef.current = true;
+      freehandDrawingRef.current = false;
+      freehandPointsRef.current = [];
+      draw.changeMode("simple_select");
       if (editingGeofence) {
         setUpdateError("");
       } else {
         setCreateError("");
       }
-      console.log("[geofences] switched to draw_polygon mode");
+      console.log("[geofences] switched to freehand polygon mode");
     } catch (error) {
       console.error(
         "[geofences] failed to switch to draw_polygon mode:",
@@ -1031,12 +1058,10 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         button.style.alignItems = "center";
         button.style.justifyContent = "center";
         button.style.border = "1px solid rgba(148, 163, 184, 0.8)";
-        button.style.borderRadius = "6px";
-        button.style.background = disabled
-          ? "rgba(71, 85, 105, 0.7)"
-          : "rgba(15, 23, 42, 0.96)";
-        button.style.color = "#f8fafc";
-        button.style.boxShadow = "0 2px 8px rgba(15, 23, 42, 0.35)";
+        button.style.borderRadius = "0";
+        button.style.background = disabled ? "#f1f3f4" : "#ffffff";
+        button.style.color = disabled ? "#9aa0a6" : "#3c4043";
+        button.style.boxShadow = "none";
         button.style.cursor = disabled ? "not-allowed" : "pointer";
         button.style.opacity = disabled ? "0.6" : "1";
         button.innerHTML = `<span aria-hidden="true" style="display:flex; width:16px; height:16px; align-items:center; justify-content:center; color:inherit;">${iconSvg}</span>`;
@@ -1053,9 +1078,8 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       }
 
       button.disabled = disabled;
-      button.style.background = disabled
-        ? "rgba(71, 85, 105, 0.7)"
-        : "rgba(15, 23, 42, 0.96)";
+      button.style.background = disabled ? "#f1f3f4" : "#ffffff";
+      button.style.color = disabled ? "#9aa0a6" : "#3c4043";
       button.style.cursor = disabled ? "not-allowed" : "pointer";
       button.style.opacity = disabled ? "0.6" : "1";
     };
@@ -1161,8 +1185,9 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
           let drawingMode: "polygon" | null = null;
           let points: GoogleLatLngLiteral[] = [];
           let previewPolygon: GooglePolygon | null = null;
-          let clickListener: GoogleEventListener | null = null;
-          let doubleClickListener: GoogleEventListener | null = null;
+          let pointerDownListener: GoogleEventListener | null = null;
+          let pointerMoveListener: GoogleEventListener | null = null;
+          let pointerUpListener: GoogleEventListener | null = null;
 
           const finishPolygon = () => {
             if (points.length < 3) {
@@ -1200,20 +1225,22 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
               });
             },
             dispose: () => {
-              clickListener?.remove();
-              doubleClickListener?.remove();
+              pointerDownListener?.remove();
+              pointerMoveListener?.remove();
+              pointerUpListener?.remove();
               previewPolygon?.setMap(null);
             },
           };
 
-          clickListener = googleMaps.maps.event.addListener(
+          pointerDownListener = googleMaps.maps.event.addListener(
             googleMap,
-            "click",
+            "mousedown",
             (event: GoogleMapMouseEvent) => {
               if (drawingMode !== "polygon" || !event.latLng) {
                 return;
               }
               points = [...points, event.latLng.toJSON()];
+              googleMap.setOptions({ draggable: false });
               previewPolygon?.setMap(null);
               previewPolygon = new googleMaps.maps.Polygon({
                 paths: points,
@@ -1225,10 +1252,39 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
               });
             },
           );
-          doubleClickListener = googleMaps.maps.event.addListener(
+          pointerMoveListener = googleMaps.maps.event.addListener(
             googleMap,
-            "dblclick",
-            finishPolygon,
+            "mousemove",
+            (event: GoogleMapMouseEvent) => {
+              if (
+                drawingMode !== "polygon" ||
+                !event.latLng ||
+                !points.length
+              ) {
+                return;
+              }
+              previewPolygon?.setMap(null);
+              previewPolygon = new googleMaps.maps.Polygon({
+                paths: [...points, event.latLng.toJSON()],
+                strokeColor: "#fbb03b",
+                strokeWeight: 2,
+                fillColor: "#fbb03b",
+                fillOpacity: 0.08,
+                map: googleMap,
+              });
+            },
+          );
+          pointerUpListener = googleMaps.maps.event.addListener(
+            googleMap,
+            "mouseup",
+            (event: GoogleMapMouseEvent) => {
+              if (drawingMode !== "polygon" || !event.latLng) {
+                return;
+              }
+              points = [...points, event.latLng.toJSON()];
+              googleMap.setOptions({ draggable: true });
+              finishPolygon();
+            },
           );
           drawingController.setMap(googleMap);
           googleDrawingManagerRef.current = drawingController;
@@ -1281,6 +1337,78 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         handleDrawSync();
       };
 
+      const onPointerDown = (event?: DrawEvent | MapPointerEvent) => {
+        const pointerEvent = event as MapPointerEvent | undefined;
+        if (!freehandDrawingEnabledRef.current || !pointerEvent?.lngLat) {
+          return;
+        }
+
+        freehandDrawingRef.current = true;
+        freehandPointsRef.current = [
+          [pointerEvent.lngLat.lng, pointerEvent.lngLat.lat],
+        ];
+        map.dragPan?.disable();
+        draw.changeMode("simple_select");
+      };
+
+      const onPointerMove = (event?: DrawEvent | MapPointerEvent) => {
+        const pointerEvent = event as MapPointerEvent | undefined;
+        if (!freehandDrawingRef.current || !pointerEvent?.lngLat) {
+          return;
+        }
+
+        const lastPoint = freehandPointsRef.current.at(-1);
+        const nextPoint = [pointerEvent.lngLat.lng, pointerEvent.lngLat.lat];
+        if (
+          lastPoint &&
+          Math.abs(lastPoint[0] - nextPoint[0]) < 0.00001 &&
+          Math.abs(lastPoint[1] - nextPoint[1]) < 0.00001
+        ) {
+          return;
+        }
+
+        freehandPointsRef.current.push(nextPoint);
+        if (freehandPointsRef.current.length >= 3) {
+          draw.deleteAll();
+          draw.add({
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "Polygon",
+              coordinates: [ensureClosedLinearRing(freehandPointsRef.current)],
+            },
+          });
+        }
+      };
+
+      const onPointerUp = () => {
+        if (!freehandDrawingRef.current) {
+          return;
+        }
+
+        freehandDrawingRef.current = false;
+        freehandDrawingEnabledRef.current = false;
+        map.dragPan?.enable();
+        const points = freehandPointsRef.current;
+        freehandPointsRef.current = [];
+
+        if (points.length < 3) {
+          draw.deleteAll();
+          return;
+        }
+
+        draw.deleteAll();
+        draw.add({
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Polygon",
+            coordinates: [ensureClosedLinearRing(points)],
+          },
+        });
+        handleDrawSync();
+      };
+
       const onStyleLoad = () => {
         setMapReadyTick((current) => current + 1);
       };
@@ -1322,6 +1450,10 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       map.on("draw.create", onDrawCreate);
       map.on("draw.update", onDrawUpdate);
       map.on("draw.delete", onDrawDelete);
+      map.on("mousedown", onPointerDown);
+      map.on("mousemove", onPointerMove);
+      map.on("mouseup", onPointerUp);
+      map.on("mouseleave", onPointerUp);
       map.on("style.load", onStyleLoad);
 
       mapRef.current = map as unknown as MapInstance;
@@ -1331,6 +1463,10 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         map.off("draw.create", onDrawCreate);
         map.off("draw.update", onDrawUpdate);
         map.off("draw.delete", onDrawDelete);
+        map.off("mousedown", onPointerDown);
+        map.off("mousemove", onPointerMove);
+        map.off("mouseup", onPointerUp);
+        map.off("mouseleave", onPointerUp);
         map.off("style.load", onStyleLoad);
       };
     };
@@ -1359,6 +1495,9 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       }
 
       drawRef.current = null;
+      freehandDrawingEnabledRef.current = false;
+      freehandDrawingRef.current = false;
+      freehandPointsRef.current = [];
       DrawConstructorRef.current = null;
       googleDrawingManagerRef.current?.dispose();
       googleDrawingManagerRef.current?.setMap(null);
@@ -1405,6 +1544,47 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
 
   useEffect(() => {
     const map = mapRef.current;
+
+    googleLoadedPolygonRefs.current.forEach((polygon) => polygon.setMap(null));
+    googleLoadedPolygonRefs.current = [];
+
+    if (googleMapRef.current) {
+      if (!rows?.length) {
+        return;
+      }
+
+      const googleMaps = getGoogleMapsApi();
+      const bounds = new googleMaps.maps.LatLngBounds();
+
+      rows.forEach((geofence) => {
+        const ring = geofence.boundary.coordinates?.[0];
+        if (!Array.isArray(ring) || ring.length < 4) {
+          return;
+        }
+
+        const polygon = new googleMaps.maps.Polygon({
+          paths: ring.map(([longitude, latitude]) => ({
+            lat: latitude,
+            lng: longitude,
+          })),
+          strokeColor: "#06b6d4",
+          strokeWeight: 2.5,
+          fillColor: "#22d3ee",
+          fillOpacity: 0.12,
+          map: googleMapRef.current,
+        });
+        googleLoadedPolygonRefs.current.push(polygon);
+
+        ring.forEach(([longitude, latitude]) => {
+          bounds.extend({ lat: latitude, lng: longitude });
+        });
+      });
+
+      if (googleLoadedPolygonRefs.current.length) {
+        googleMapRef.current.fitBounds(bounds, 40);
+      }
+      return;
+    }
 
     if (!map) {
       return;
@@ -1787,11 +1967,11 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
 
         <div className="relative">
           {mapProvider === "google" ? (
-            <div className="absolute left-3 top-3 z-10 flex flex-col gap-2 rounded-lg border border-slate-300/70 bg-slate-950/90 p-2 shadow-lg">
+            <div className="absolute left-3 top-3 z-10 flex flex-col overflow-hidden rounded-sm border border-slate-300/80 bg-white shadow-md">
               <button
                 type="button"
                 onClick={handleStartPolygonDraw}
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-400/70 text-slate-100 hover:bg-slate-700"
+                className="flex h-9 w-9 items-center justify-center border-b border-slate-200 text-slate-700 hover:bg-slate-100"
                 title="Draw polygon"
                 aria-label="Draw polygon"
               >
@@ -1801,7 +1981,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
                 type="button"
                 disabled={!canEditPolygon}
                 onClick={handleEditPolygon}
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-400/70 text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-9 w-9 items-center justify-center border-b border-slate-200 text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Edit polygon"
                 aria-label="Edit polygon"
               >
@@ -1814,7 +1994,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
                     current === "satellite" ? "streets" : "satellite",
                   )
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-400/70 text-slate-100 hover:bg-slate-700"
+                className="flex h-9 w-9 items-center justify-center text-slate-700 hover:bg-slate-100"
                 title={
                   mapViewMode === "satellite"
                     ? "Streets view"
