@@ -19,6 +19,7 @@ interface GeofenceApiModel {
   boundary?: unknown;
   boundary_coordinates?: unknown;
   description?: string | null;
+  parent_geofence_id?: string | null;
   created_by?: string | null;
   createdBy?: string | null;
   organization_id?: string | null;
@@ -31,6 +32,7 @@ export interface Geofence {
   description: string;
   createdBy: string;
   organizationId: string | null;
+  parentGeofenceId: string | null;
 }
 
 export interface GeofenceInput {
@@ -38,6 +40,7 @@ export interface GeofenceInput {
   boundary: GeoJsonPolygon;
   description: string;
   created_by: string;
+  parent_geofence_id?: string | null;
 }
 
 function normalizePolygon(boundary: unknown): GeoJsonPolygon {
@@ -117,6 +120,7 @@ function mapGeofence(item: GeofenceApiModel): Geofence {
     description: item.description ?? "",
     createdBy: item.created_by ?? item.createdBy ?? "",
     organizationId: item.organization_id ?? null,
+    parentGeofenceId: item.parent_geofence_id ?? null,
   };
 }
 

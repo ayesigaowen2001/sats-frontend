@@ -6,6 +6,7 @@ import { ResourceRowActions } from "@/components/common/resource-row-actions";
 import { DataTable } from "@/components/data-table";
 import { MapProviderSelector } from "@/components/map-provider-selector";
 import { ResourceFeedback } from "@/components/resource-feedback";
+import { TrackingGeofenceRulesPanel } from "@/components/tracking-geofence-rules-panel";
 import { getSessionData } from "@/lib/auth-tokens";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
 import {
@@ -33,6 +34,7 @@ interface GeofenceFormValues extends Record<string, string> {
   boundary_coordinates: string;
   description: string;
   created_by: string;
+  parent_geofence_id: string;
 }
 
 const defaultValues: GeofenceFormValues = {
@@ -40,6 +42,7 @@ const defaultValues: GeofenceFormValues = {
   boundary_coordinates: "",
   description: "",
   created_by: "",
+  parent_geofence_id: "",
 };
 
 const mapboxDrawStyles: unknown[] = [
@@ -328,6 +331,9 @@ function toPayload(
     },
     description: values.description.trim(),
     created_by: currentUserId.trim(),
+    ...(values.parent_geofence_id.trim()
+      ? { parent_geofence_id: values.parent_geofence_id.trim() }
+      : {}),
   };
 }
 
@@ -344,6 +350,7 @@ function fromGeofence(
     ),
     description: geofence.description,
     created_by: geofence.createdBy || fallbackCreatedBy,
+    parent_geofence_id: geofence.parentGeofenceId ?? "",
   };
 }
 
@@ -520,6 +527,8 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
   const [deletingGeofenceId, setDeletingGeofenceId] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleteSuccess, setDeleteSuccess] = useState("");
+  const [selectedRulesGeofence, setSelectedRulesGeofence] =
+    useState<Geofence | null>(null);
 
   const [testAreaOutput, setTestAreaOutput] = useState("");
   const [canEditPolygon, setCanEditPolygon] = useState(false);
@@ -1931,6 +1940,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
           onChange={(event) => {
             setSelectedOrgId(event.target.value);
             setEditingGeofence(null);
+            setSelectedRulesGeofence(null);
             setShowCreateForm(false);
             clearActionMessages();
             setTestAreaOutput("");
@@ -2093,6 +2103,31 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
 
           <label className="block sm:col-span-2">
             <span className="text-sm font-medium text-[var(--color-ice)]">
+              Parent geofence (optional for the main geofence)
+            </span>
+            <select
+              value={createValues.parent_geofence_id}
+              onChange={(event) =>
+                setCreateValues((prev) => ({
+                  ...prev,
+                  parent_geofence_id: event.target.value,
+                }))
+              }
+              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
+            >
+              <option value="">Main geofence</option>
+              {rows
+                ?.filter((geofence) => geofence.id !== editingGeofence?.id)
+                .map((geofence) => (
+                  <option key={geofence.id} value={geofence.id}>
+                    {geofence.parkName}
+                  </option>
+                ))}
+            </select>
+          </label>
+
+          <label className="block sm:col-span-2">
+            <span className="text-sm font-medium text-[var(--color-ice)]">
               Created by (User ID)
             </span>
             <input
@@ -2101,6 +2136,31 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
               readOnly
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             />
+          </label>
+
+          <label className="block sm:col-span-2">
+            <span className="text-sm font-medium text-[var(--color-ice)]">
+              Parent geofence
+            </span>
+            <select
+              value={updateValues.parent_geofence_id}
+              onChange={(event) =>
+                setUpdateValues((prev) => ({
+                  ...prev,
+                  parent_geofence_id: event.target.value,
+                }))
+              }
+              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
+            >
+              <option value="">Main geofence</option>
+              {rows
+                ?.filter((geofence) => geofence.id !== editingGeofence?.id)
+                .map((geofence) => (
+                  <option key={geofence.id} value={geofence.id}>
+                    {geofence.parkName}
+                  </option>
+                ))}
+            </select>
           </label>
 
           <label className="block sm:col-span-2">
@@ -2303,18 +2363,34 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
             {
               header: "Actions",
               render: (row) => (
-                <ResourceRowActions
-                  onEdit={() => handleStartEdit(row)}
-                  onDelete={() => {
-                    void handleDelete(row);
-                  }}
-                  isDeleting={deletingGeofenceId === row.id}
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRulesGeofence(row)}
+                    className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-100"
+                  >
+                    Rules
+                  </button>
+                  <ResourceRowActions
+                    onEdit={() => handleStartEdit(row)}
+                    onDelete={() => {
+                      void handleDelete(row);
+                    }}
+                    isDeleting={deletingGeofenceId === row.id}
+                  />
+                </div>
               ),
             },
           ]}
         />
       )}
+
+      {selectedRulesGeofence && selectedOrgId ? (
+        <TrackingGeofenceRulesPanel
+          orgId={selectedOrgId}
+          geofenceId={selectedRulesGeofence.id}
+        />
+      ) : null}
 
       <div className="rounded-2xl border border-white/10 bg-black/10 p-3 text-xs text-[var(--color-fog)]">
         Active form boundary size: {activeValues.boundary_coordinates.length}{" "}
