@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { ReportBarChart, ReportDonutChart } from "@/components/report-charts";
 import type { ModuleReport, ReportSection } from "@/types/report";
 
 export interface ReportOrganizationContact {
@@ -12,10 +13,52 @@ export interface ReportOrganizationContact {
   country: string;
 }
 
+export type ReportFontSize = "compact" | "normal" | "large";
+export type ReportFontFamily = "default" | "serif" | "sans" | "mono";
+
 interface ReportDocumentProps {
   report: ModuleReport;
   organization: ReportOrganizationContact | null;
   logoUrl: string | null;
+  accentColor?: string;
+  fontSize?: ReportFontSize;
+  fontFamily?: ReportFontFamily;
+  showBarCharts?: boolean;
+  showDonutCharts?: boolean;
+}
+
+const FONT_FAMILIES: Record<ReportFontFamily, string> = {
+  default: "inherit",
+  serif: "Georgia, 'Times New Roman', serif",
+  sans: "Arial, 'Helvetica Neue', Helvetica, sans-serif",
+  mono: "'Courier New', ui-monospace, SFMono-Regular, monospace",
+};
+
+const FONT_SIZES: Record<ReportFontSize, number> = {
+  compact: 12,
+  normal: 14,
+  large: 16,
+};
+
+function withAlpha(hex: string, alpha: number) {
+  const clean = hex.replace("#", "").trim();
+
+  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(clean)) {
+    return hex;
+  }
+
+  const full =
+    clean.length === 3
+      ? clean
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : clean;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function formatValue(value: number | string | null) {
@@ -26,7 +69,13 @@ function formatValue(value: number | string | null) {
   return String(value);
 }
 
-function SectionTable({ section }: { section: ReportSection }) {
+function SectionTable({
+  section,
+  accentColor,
+}: {
+  section: ReportSection;
+  accentColor: string;
+}) {
   const hasValue = section.rows.some((row) => row.value !== null);
   const hasUnit = section.rows.some((row) => row.unit !== null);
   const hasPercentage = section.rows.some((row) => row.percentage !== null);
@@ -85,7 +134,10 @@ function SectionTable({ section }: { section: ReportSection }) {
       <tfoot>
         <tr>
           <td className="px-3 py-2 font-semibold text-slate-800">Total</td>
-          <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800">
+          <td
+            className="px-3 py-2 text-right font-semibold tabular-nums"
+            style={{ color: accentColor }}
+          >
             {section.total}
           </td>
           {hasValue ? <td /> : null}
@@ -137,12 +189,18 @@ export function ReportDocument({
   report,
   organization,
   logoUrl,
+  accentColor = "#d17a22",
+  fontSize = "normal",
+  fontFamily = "default",
+  showBarCharts = true,
+  showDonutCharts = true,
 }: ReportDocumentProps) {
   const organizationName =
     organization?.name || report.meta.organization_name || "Organisation";
   const generatedAt = report.meta.generated_at
     ? new Date(report.meta.generated_at).toLocaleString()
     : "—";
+  const accent = accentColor || "#d17a22";
 
   const contactLines: ReactNode[] = [];
 
@@ -167,11 +225,17 @@ export function ReportDocument({
   }
 
   return (
-    <article className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white text-slate-900 shadow-[0_24px_80px_rgba(0,0,0,0.35)] print:max-w-none print:rounded-none print:border-0 print:shadow-none">
-      {/* Watermark */}
+    <article
+      className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white text-slate-900 shadow-[0_24px_80px_rgba(0,0,0,0.35)] print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none"
+      style={{
+        fontFamily: FONT_FAMILIES[fontFamily] ?? FONT_FAMILIES.default,
+        fontSize: FONT_SIZES[fontSize] ?? FONT_SIZES.normal,
+      }}
+    >
+      {/* Watermark (screen only — absolute spans break print pagination) */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden"
+        className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden print:hidden"
       >
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -189,18 +253,24 @@ export function ReportDocument({
 
       <div className="relative">
         {/* Header */}
-        <header className="grid grid-cols-1 gap-4 border-b border-slate-200 px-8 py-4 sm:grid-cols-2">
+        <header
+          className="grid grid-cols-1 gap-4 border-b-4 px-8 py-6 sm:grid-cols-2"
+          style={{ borderColor: accent }}
+        >
           <div className="flex flex-col items-center justify-center gap-2 text-center">
             <LogoMark logoUrl={logoUrl} name={organizationName} />
-            <h1 className="text-base font-semibold text-slate-800">
+            <h1 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
               {organizationName}
             </h1>
           </div>
-          <div className="flex flex-col items-center justify-center gap-1 text-center">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
+          <div className="flex flex-col items-center justify-center gap-2 text-center">
+            <h2
+              className="text-2xl font-bold leading-tight tracking-tight"
+              style={{ color: accent }}
+            >
               {report.title}
-            </p>
-            <p className="text-[11px] text-slate-500">
+            </h2>
+            <p className="text-xs text-slate-500">
               Reporting period: {report.meta.date_from} → {report.meta.date_to}
             </p>
           </div>
@@ -216,19 +286,29 @@ export function ReportDocument({
 
           {report.summary.length ? (
             <section>
-              <h2 className="mb-4 text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">
-                Summary
-              </h2>
+              <div className="mb-4 flex items-center gap-2">
+                <span
+                  className="inline-block h-4 w-1 rounded-full"
+                  style={{ backgroundColor: accent }}
+                />
+                <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  Summary
+                </h2>
+              </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {report.summary.map((item) => (
                   <div
                     key={item.key}
                     className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                    style={{ borderTopColor: accent, borderTopWidth: 3 }}
                   >
                     <p className="text-xs uppercase tracking-wider text-slate-500">
                       {item.label}
                     </p>
-                    <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-800">
+                    <p
+                      className="mt-2 text-2xl font-semibold tabular-nums"
+                      style={{ color: accent }}
+                    >
                       {formatValue(item.value)}
                       {item.unit ? (
                         <span className="ml-1 text-sm font-normal text-slate-500">
@@ -243,31 +323,65 @@ export function ReportDocument({
           ) : null}
 
           <section className="space-y-6">
-            {report.sections.map((section) => (
-              <div
-                key={section.key}
-                className="rounded-xl border border-slate-200"
-              >
-                <div className="border-b border-slate-200 px-4 py-3">
-                  <h2 className="text-sm font-semibold text-slate-800">
-                    {section.title}
-                  </h2>
-                  {section.note ? (
-                    <p className="mt-1 text-xs italic text-slate-500">
-                      {section.note}
-                    </p>
-                  ) : null}
+            {report.sections.map((section) => {
+              const hasRows = section.rows.length > 0;
+              const hasPercentage = section.rows.some(
+                (row) => row.percentage !== null,
+              );
+              const showDonut = hasRows && hasPercentage && showDonutCharts;
+              const showBar = hasRows && !showDonut && showBarCharts;
+
+              return (
+                <div
+                  key={section.key}
+                  className="overflow-hidden rounded-xl border border-slate-200"
+                >
+                  <div
+                    className="border-l-4 px-4 py-3"
+                    style={{
+                      borderColor: accent,
+                      backgroundColor: withAlpha(accent, 0.07),
+                    }}
+                  >
+                    <h2 className="text-sm font-semibold text-slate-800">
+                      {section.title}
+                    </h2>
+                    {section.note ? (
+                      <p className="mt-1 text-xs italic text-slate-500">
+                        {section.note}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="px-4 py-3">
+                    {showDonut ? (
+                      <div className="mb-4">
+                        <ReportDonutChart
+                          rows={section.rows}
+                          accentColor={accent}
+                        />
+                      </div>
+                    ) : null}
+                    {showBar ? (
+                      <div className="mb-4">
+                        <ReportBarChart
+                          rows={section.rows}
+                          accentColor={accent}
+                        />
+                      </div>
+                    ) : null}
+                    <SectionTable section={section} accentColor={accent} />
+                  </div>
                 </div>
-                <div className="px-4 py-3">
-                  <SectionTable section={section} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </section>
         </div>
 
         {/* Footer */}
-        <footer className="grid grid-cols-1 gap-4 border-t border-slate-200 px-8 py-4 sm:grid-cols-2">
+        <footer
+          className="grid grid-cols-1 gap-4 border-t-4 px-8 py-6 sm:grid-cols-2"
+          style={{ borderColor: accent }}
+        >
           <div className="flex flex-col items-center justify-center gap-1 text-center text-xs text-slate-600">
             {contactLines.length
               ? contactLines.map((line, index) => (

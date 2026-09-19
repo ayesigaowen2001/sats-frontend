@@ -164,7 +164,15 @@ select {
 }
 
 @media print {
+  html,
   body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body {
+    display: block !important;
     background: #ffffff !important;
     color: #000000 !important;
   }

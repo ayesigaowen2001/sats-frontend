@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ResourceFeedback } from "@/components/resource-feedback";
 import {
   ReportDocument,
+  type ReportFontFamily,
+  type ReportFontSize,
   type ReportOrganizationContact,
 } from "@/components/report-document";
 import { getSessionData } from "@/lib/auth-tokens";
@@ -14,6 +16,7 @@ import {
   type Organization,
 } from "@/lib/organizations/organization-crud";
 import { moduleReportsService } from "@/lib/reports/module-reports-service";
+import { useUIStore } from "@/store/useUIStore";
 import type { ModuleReport } from "@/types/report";
 
 export interface ReportSubjectOption {
@@ -71,6 +74,7 @@ export function ModuleReportPageView({
   const sessionData = getSessionData();
   const isSystemAdmin = Boolean(sessionData?.user.is_system_admin);
   const ownOrgId = sessionData?.user.organization_id ?? "";
+  const orgAccent = useUIStore((state) => state.systemThemeColors.accent);
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState("");
@@ -83,6 +87,11 @@ export function ModuleReportPageView({
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState("");
+  const [accentColor, setAccentColor] = useState(orgAccent || "#d17a22");
+  const [fontSize, setFontSize] = useState<ReportFontSize>("normal");
+  const [fontFamily, setFontFamily] = useState<ReportFontFamily>("default");
+  const [showBarCharts, setShowBarCharts] = useState(true);
+  const [showDonutCharts, setShowDonutCharts] = useState(true);
 
   // Keep the latest subject loader without adding it as an effect dependency.
   const loadSubjectsRef = useRef(loadSubjects);
@@ -360,6 +369,83 @@ export function ModuleReportPageView({
             </button>
           </div>
         </div>
+
+        <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-white/10 pt-4">
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-fog)]">
+            Customise
+          </span>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Accent colour
+            </span>
+            <input
+              type="color"
+              value={accentColor}
+              onChange={(event) => setAccentColor(event.target.value)}
+              className="h-9 w-12 cursor-pointer rounded-md border border-white/15 bg-transparent"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Font size
+            </span>
+            <select
+              value={fontSize}
+              onChange={(event) =>
+                setFontSize(event.target.value as ReportFontSize)
+              }
+              className="rounded-md border border-white/15 bg-[var(--color-shell)] px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none focus:ring-1 focus:ring-[var(--color-sand)] [&_option]:bg-white [&_option]:text-black"
+            >
+              <option value="compact">Compact</option>
+              <option value="normal">Normal</option>
+              <option value="large">Large</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Font style
+            </span>
+            <select
+              value={fontFamily}
+              onChange={(event) =>
+                setFontFamily(event.target.value as ReportFontFamily)
+              }
+              className="rounded-md border border-white/15 bg-[var(--color-shell)] px-2.5 py-1.5 text-sm text-[var(--color-ice)] outline-none focus:ring-1 focus:ring-[var(--color-sand)] [&_option]:bg-white [&_option]:text-black"
+            >
+              <option value="default">Default</option>
+              <option value="serif">Serif</option>
+              <option value="sans">Sans-serif</option>
+              <option value="mono">Monospace</option>
+            </select>
+          </label>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showBarCharts}
+              onChange={(event) => setShowBarCharts(event.target.checked)}
+              className="h-4 w-4 accent-[var(--color-sand)]"
+            />
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Bar charts
+            </span>
+          </label>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showDonutCharts}
+              onChange={(event) => setShowDonutCharts(event.target.checked)}
+              className="h-4 w-4 accent-[var(--color-sand)]"
+            />
+            <span className="text-xs font-medium text-[var(--color-ice)]">
+              Donut charts
+            </span>
+          </label>
+        </div>
       </section>
 
       {error ? (
@@ -379,6 +465,11 @@ export function ModuleReportPageView({
           report={report}
           organization={organization}
           logoUrl={logoUrl}
+          accentColor={accentColor}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          showBarCharts={showBarCharts}
+          showDonutCharts={showDonutCharts}
         />
       ) : null}
     </div>
