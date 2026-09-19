@@ -4,6 +4,7 @@ export interface DashboardNavItem {
   label: string;
   href: string;
   description: string;
+  children?: DashboardNavItem[];
 }
 
 export interface DashboardModuleDefinition {
@@ -100,6 +101,12 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         href: "/organization/system-settings",
         description: "Adjust tenant-level defaults and operational policies.",
       },
+      {
+        label: "Organisation Overview",
+        href: "/organization/organisation-overview",
+        description:
+          "Headline counts across every domain — the executive summary.",
+      },
     ],
   },
   {
@@ -157,6 +164,12 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         href: "/device/maintenance-logs",
         description: "Track repairs, calibrations, and field service work.",
       },
+      {
+        label: "Devices Report",
+        href: "/device/devices-report",
+        description:
+          "Hardware: status, assignment, silence and battery alerts.",
+      },
     ],
   },
   {
@@ -204,6 +217,12 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         href: "/users/activity-log",
         description: "Audit recent user actions and sign-ins.",
       },
+      {
+        label: "Users Report",
+        href: "/users/users-report",
+        description:
+          "The roster: status, roles, sign-ins and who is recording work.",
+      },
     ],
   },
   {
@@ -246,6 +265,12 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         label: "Animal Groups",
         href: "/animal/groups",
         description: "Organize herds, pods, packs, and cohorts.",
+      },
+      {
+        label: "Animals Report",
+        href: "/animal/animals-report",
+        description:
+          "Population report by species, sex, age, conservation status, and collaring.",
       },
     ],
   },
@@ -294,6 +319,11 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         href: "/health/vital-trends",
         description: "Explore trajectories across biometric channels.",
       },
+      {
+        label: "Animal Health Report",
+        href: "/health/health-report",
+        description: "Collar vitals and the AI's verdicts over the window.",
+      },
     ],
   },
   {
@@ -330,6 +360,32 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         label: "Geofence Events / Breaches",
         href: "/tracking/geofence-events",
         description: "Monitor entries, exits, and violations.",
+      },
+      {
+        label: "Reports",
+        href: "/tracking/reports",
+        description:
+          "Geofence, geofence-event, and telemetry coverage reports.",
+        children: [
+          {
+            label: "Geofences Report",
+            href: "/tracking/geofences-report",
+            description:
+              "The fences: hierarchy, area, rules, and which are triggered most.",
+          },
+          {
+            label: "Geofence Events Report",
+            href: "/tracking/geofence-events-report",
+            description:
+              "Containment over the window: breaches, borders, and who caused them.",
+          },
+          {
+            label: "Tracking Coverage Report",
+            href: "/tracking/tracking-coverage-report",
+            description:
+              "How much telemetry arrived, from which animals and collars.",
+          },
+        ],
       },
     ],
   },
@@ -373,6 +429,25 @@ export const dashboardModules: DashboardModuleDefinition[] = [
         label: "Camera Management",
         href: "/video/cameras",
         description: "Create, update, and manage field cameras.",
+      },
+      {
+        label: "Reports",
+        href: "/video/reports",
+        description: "Camera traps and field observations reporting.",
+        children: [
+          {
+            label: "Cameras Report",
+            href: "/video/cameras-report",
+            description:
+              "Camera traps and the footage they captured over the window.",
+          },
+          {
+            label: "Field Observations Report",
+            href: "/video/field-observations-report",
+            description:
+              "Poaching sign, carcasses and vehicle sightings, and how they were closed.",
+          },
+        ],
       },
     ],
   },
@@ -551,9 +626,28 @@ export function getDefaultSidebarItem(pathname: string) {
 export function getModuleSectionSlugs(moduleKey: string) {
   const activeModule = dashboardModules.find((item) => item.key === moduleKey);
 
-  return (activeModule?.items ?? [])
-    .filter((item) => item.href !== activeModule?.href)
-    .map((item) => item.href.replace(`${activeModule?.href}/`, ""));
+  if (!activeModule) {
+    return [];
+  }
+
+  const slugs: string[] = [];
+
+  const collect = (items: DashboardNavItem[]) => {
+    items.forEach((item) => {
+      if (item.children?.length) {
+        collect(item.children);
+        return;
+      }
+
+      if (item.href !== activeModule.href) {
+        slugs.push(item.href.replace(`${activeModule.href}/`, ""));
+      }
+    });
+  };
+
+  collect(activeModule.items);
+
+  return slugs;
 }
 
 export function hasModuleSection(moduleKey: string, slug: string) {

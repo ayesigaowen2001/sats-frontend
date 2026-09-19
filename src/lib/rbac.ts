@@ -25,6 +25,10 @@ const routeAccessRules: RouteAccessRule[] = [
     modules: ["users", "roles", "permissions"],
   },
   {
+    prefixes: ["/users/users-report"],
+    modules: ["reports"],
+  },
+  {
     prefixes: ["/users"],
     modules: ["users", "roles", "permissions"],
   },
@@ -41,6 +45,10 @@ const routeAccessRules: RouteAccessRule[] = [
     modules: ["organisation", "organisations"],
   },
   {
+    prefixes: ["/organization/organisation-overview"],
+    modules: ["reports"],
+  },
+  {
     prefixes: ["/organization"],
     modules: ["organisation", "organisations", "subscriptions"],
   },
@@ -49,8 +57,16 @@ const routeAccessRules: RouteAccessRule[] = [
     modules: ["organisations"],
   },
   {
+    prefixes: ["/animal/animals-report"],
+    modules: ["reports"],
+  },
+  {
     prefixes: ["/animals", "/animal"],
     modules: ["animals"],
+  },
+  {
+    prefixes: ["/device/devices-report"],
+    modules: ["reports"],
   },
   {
     prefixes: ["/devices", "/device"],
@@ -62,8 +78,24 @@ const routeAccessRules: RouteAccessRule[] = [
     ],
   },
   {
+    prefixes: ["/tracking/geofences-report"],
+    modules: ["reports"],
+  },
+  {
+    prefixes: ["/tracking/geofence-events-report"],
+    modules: ["reports"],
+  },
+  {
+    prefixes: ["/tracking/tracking-coverage-report"],
+    modules: ["reports"],
+  },
+  {
     prefixes: ["/tracking"],
     modules: ["tracking", "geofences"],
+  },
+  {
+    prefixes: ["/health/health-report"],
+    modules: ["reports"],
   },
   {
     prefixes: ["/health"],
@@ -71,6 +103,14 @@ const routeAccessRules: RouteAccessRule[] = [
   },
   {
     prefixes: ["/reports"],
+    modules: ["reports"],
+  },
+  {
+    prefixes: ["/video/cameras-report"],
+    modules: ["reports"],
+  },
+  {
+    prefixes: ["/video/field-observations-report"],
     modules: ["reports"],
   },
   {

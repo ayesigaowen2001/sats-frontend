@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 
 import { AllAnimalsPageView } from "@/components/all-animals-page-view";
 import { AnimalClassificationsPageView } from "@/components/animal-classifications-page-view";
+import { AnimalGroupsPageView } from "@/components/animal-groups-page-view";
+import { AnimalsReportPageView } from "@/components/animals-report-page-view";
 import { hasModuleSection } from "@/lib/dashboard-config";
 
 export default async function AnimalSectionPage({
@@ -21,6 +23,14 @@ export default async function AnimalSectionPage({
 
   if (section === "classifications") {
     return <AnimalClassificationsPageView />;
+  }
+
+  if (section === "groups") {
+    return <AnimalGroupsPageView />;
+  }
+
+  if (section === "animals-report") {
+    return <AnimalsReportPageView />;
   }
 
   notFound();
