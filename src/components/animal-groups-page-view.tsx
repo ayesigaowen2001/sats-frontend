@@ -15,6 +15,7 @@ import {
   type AnimalGroup,
   type AnimalGroupFilters,
 } from "@/lib/animals/animal-groups-service";
+import { animalsService } from "@/lib/animals/animals-service";
 import { organizationCrudService } from "@/lib/organizations/organization-crud";
 import { getSessionData } from "@/lib/auth-tokens";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -22,6 +23,11 @@ import { useAuthStore } from "@/store/useAuthStore";
 interface OrganizationOption {
   id: string;
   name: string;
+}
+
+interface AnimalOption {
+  animalNumber: string;
+  commonName: string;
 }
 
 interface GroupFormValues extends Record<string, string> {
@@ -71,20 +77,21 @@ export function AnimalGroupsPageView(): React.JSX.Element {
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState("");
-  const [memberInput, setMemberInput] = useState("");
+  const [animalOptions, setAnimalOptions] = useState<AnimalOption[]>([]);
+  const [selectedAnimalNumbers, setSelectedAnimalNumbers] = useState<string[]>(
+    [],
+  );
+  const [isAnimalPickerOpen, setIsAnimalPickerOpen] = useState(false);
+  const [isLoadingAnimals, setIsLoadingAnimals] = useState(false);
   const [isUpdatingMembers, setIsUpdatingMembers] = useState(false);
 
   const isSystemAdmin = useMemo(() => {
     if (!hasHydrated) return false;
     return getSessionData()?.user?.is_system_admin ?? false;
   }, [hasHydrated]);
-  const activeOrgId = useMemo(
-    () =>
-      !isSystemAdmin && user?.organizationId
-        ? user.organizationId
-        : selectedOrgId,
-    [isSystemAdmin, selectedOrgId, user?.organizationId],
-  );
+  const activeOrgId = !isSystemAdmin && user?.organizationId
+    ? user.organizationId
+    : selectedOrgId;
 
   const loadGroups = useCallback(async () => {
     if (!activeOrgId) {
@@ -108,7 +115,10 @@ export function AnimalGroupsPageView(): React.JSX.Element {
     });
   }, [activeOrgId, filters, page]);
 
-  useEffect(() => setHasHydrated(true), []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHasHydrated(true);
+  }, []);
   useEffect(() => {
     let mounted = true;
     void organizationCrudService
@@ -130,6 +140,7 @@ export function AnimalGroupsPageView(): React.JSX.Element {
     };
   }, [isSystemAdmin, user?.organizationId]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRows(null);
     setActionError("");
     void loadGroups().catch((error: unknown) =>
@@ -252,20 +263,64 @@ export function AnimalGroupsPageView(): React.JSX.Element {
     }
   };
 
-  const addMembers = async () => {
+  const loadAnimalOptions = async () => {
     if (!activeOrgId || !selectedGroup) return;
-    const animalNumbers = splitAnimalNumbers(memberInput);
-    if (!animalNumbers.length)
-      return setActionError("Enter at least one animal number.");
+    setIsLoadingAnimals(true);
+    try {
+      const result = await animalsService.listAnimals(activeOrgId, {
+        page: 1,
+        per_page: 100,
+      });
+      const existing = new Set(
+        selectedGroup.members.map((member) => member.animalNumber),
+      );
+      setAnimalOptions(
+        result.items
+          .map((animal) => ({
+            animalNumber: animal.animalNumber,
+            commonName: animal.commonName,
+          }))
+          .filter((option) => !existing.has(option.animalNumber)),
+      );
+    } catch {
+      setAnimalOptions([]);
+    } finally {
+      setIsLoadingAnimals(false);
+    }
+  };
+
+  const toggleAnimalPicker = () => {
+    const next = !isAnimalPickerOpen;
+    setIsAnimalPickerOpen(next);
+    setActionError("");
+    if (next) {
+      setSelectedAnimalNumbers([]);
+      void loadAnimalOptions();
+    }
+  };
+
+  const toggleAnimalSelection = (animalNumber: string) => {
+    setSelectedAnimalNumbers((current) =>
+      current.includes(animalNumber)
+        ? current.filter((number) => number !== animalNumber)
+        : [...current, animalNumber],
+    );
+  };
+
+  const addSelectedAnimals = async () => {
+    if (!activeOrgId || !selectedGroup) return;
+    if (!selectedAnimalNumbers.length)
+      return setActionError("Select at least one animal.");
     setIsUpdatingMembers(true);
     setActionError("");
     try {
       await animalGroupsService.addMembers(
         activeOrgId,
         selectedGroup.id,
-        animalNumbers,
+        selectedAnimalNumbers,
       );
-      setMemberInput("");
+      setSelectedAnimalNumbers([]);
+      setIsAnimalPickerOpen(false);
       setSelectedGroup(
         await animalGroupsService.getGroup(activeOrgId, selectedGroup.id),
       );
@@ -511,21 +566,76 @@ export function AnimalGroupsPageView(): React.JSX.Element {
               Close details
             </button>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <input
-              value={memberInput}
-              onChange={(event) => setMemberInput(event.target.value)}
-              placeholder="ANM-00001, ANM-00002"
-              className="min-w-64 flex-1 rounded-lg border border-white/15 bg-transparent px-3 py-2 text-sm"
-            />
+          <div className="mt-4">
             <button
               type="button"
-              disabled={isUpdatingMembers}
-              onClick={() => void addMembers()}
-              className="rounded-lg border border-[var(--color-sand)] bg-[var(--color-sand)]/10 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              onClick={toggleAnimalPicker}
+              className="rounded-lg border border-[var(--color-sand)] bg-[var(--color-sand)]/10 px-4 py-2 text-sm font-semibold"
             >
               Add animals
             </button>
+
+            {isAnimalPickerOpen ? (
+              <div className="mt-3 rounded-xl border border-white/15 bg-black/20 p-3">
+                {isLoadingAnimals ? (
+                  <p className="py-4 text-sm text-[var(--color-mist)]">
+                    Loading animals…
+                  </p>
+                ) : animalOptions.length === 0 ? (
+                  <p className="py-4 text-sm text-[var(--color-mist)]">
+                    No animals available to add.
+                  </p>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto pr-1">
+                    {animalOptions.map((option) => {
+                      const checked = selectedAnimalNumbers.includes(
+                        option.animalNumber,
+                      );
+
+                      return (
+                        <label
+                          key={option.animalNumber}
+                          className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-white/[0.05]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              toggleAnimalSelection(option.animalNumber)
+                            }
+                            className="h-4 w-4 accent-[var(--color-sand)]"
+                          />
+                          <span className="text-sm font-medium text-[var(--color-ice)]">
+                            {option.animalNumber}
+                          </span>
+                          <span className="text-xs text-[var(--color-mist)]">
+                            {option.commonName || ""}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-white/10 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsAnimalPickerOpen(false)}
+                    className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isUpdatingMembers || !selectedAnimalNumbers.length}
+                    onClick={() => void addSelectedAnimals()}
+                    className="rounded-lg border border-[var(--color-sand)] bg-[var(--color-sand)]/10 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                  >
+                    Add selected ({selectedAnimalNumbers.length})
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-sm">

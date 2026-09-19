@@ -156,20 +156,20 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--color-night)] text-[var(--color-ice)] print:bg-white print:text-black">
-      <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-screen flex-col bg-[var(--color-night)] text-[var(--color-ice)] print:block print:min-h-0 print:bg-white print:text-black">
+      <div className="flex min-h-0 flex-1 print:block">
         {isModuleHub ? null : (
           <Sidebar
             isOpen={isSidebarOpen}
             onClose={() => setIsSidebarOpen(false)}
           />
         )}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col print:block">
           <Topbar
             showSidebarToggle={!isModuleHub && !isSidebarOpen}
             onSidebarOpen={() => setIsSidebarOpen(true)}
           />
-          <main className="min-w-0 flex-1 overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5 print:overflow-visible print:p-0">
+          <main className="min-w-0 flex-1 overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5 print:block print:overflow-visible print:p-0">
             <PageErrorBoundary>{children}</PageErrorBoundary>
           </main>
         </div>
