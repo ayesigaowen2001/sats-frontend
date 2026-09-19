@@ -410,6 +410,7 @@ type MapInstance = {
   getSource: (id: string) => unknown;
   removeSource: (id: string) => void;
   addLayer: (layer: unknown, beforeId?: string) => void;
+  moveLayer?: (id: string, beforeId?: string) => void;
   getLayer: (id: string) => unknown;
   removeLayer: (id: string) => void;
   setStyle: (style: string) => void;
@@ -532,6 +533,9 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
 
   const [testAreaOutput, setTestAreaOutput] = useState("");
   const [canEditPolygon, setCanEditPolygon] = useState(false);
+  const [showMainGeofenceLayer, setShowMainGeofenceLayer] = useState(true);
+  const [showNestedGeofenceLayers, setShowNestedGeofenceLayers] =
+    useState(true);
   const [mapViewMode, setMapViewMode] = useState<MapViewMode>("streets");
   const mapProvider = useMapProvider();
 
@@ -649,6 +653,13 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
     if (map.getSource(sourceId)) {
       map.removeSource(sourceId);
     }
+  }, []);
+
+  const clearDraftPolygon = useCallback(() => {
+    googlePolygonRef.current?.setMap(null);
+    googlePolygonRef.current = null;
+    drawRef.current?.deleteAll();
+    setCanEditPolygon(false);
   }, []);
 
   const applyDrawCoordinatesToActiveForm = useCallback(
@@ -1213,6 +1224,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
               fillColor: "#3bb2d0",
               fillOpacity: 0.1,
               editable: false,
+              zIndex: 10,
               map: googleMap,
             });
             drawingMode = null;
@@ -1566,6 +1578,13 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       const bounds = new googleMaps.maps.LatLngBounds();
 
       rows.forEach((geofence) => {
+        if (
+          (geofence.parentGeofenceId && !showNestedGeofenceLayers) ||
+          (!geofence.parentGeofenceId && !showMainGeofenceLayer)
+        ) {
+          return;
+        }
+
         const ring = geofence.boundary.coordinates?.[0];
         if (!Array.isArray(ring) || ring.length < 4) {
           return;
@@ -1576,10 +1595,12 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
             lat: latitude,
             lng: longitude,
           })),
-          strokeColor: "#06b6d4",
+          strokeColor: geofence.parentGeofenceId ? "#f59e0b" : "#06b6d4",
           strokeWeight: 2.5,
-          fillColor: "#22d3ee",
-          fillOpacity: 0.12,
+          fillColor: geofence.parentGeofenceId ? "#f59e0b" : "#22d3ee",
+          fillOpacity: 0.08,
+          clickable: false,
+          zIndex: geofence.parentGeofenceId ? 1 : 0,
           map: googleMapRef.current,
         });
         googleLoadedPolygonRefs.current.push(polygon);
@@ -1610,6 +1631,11 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
     const lineLayerId = geofenceLineLayerIdRef.current;
 
     const features = rows
+      .filter(
+        (geofence) =>
+          (geofence.parentGeofenceId && showNestedGeofenceLayers) ||
+          (!geofence.parentGeofenceId && showMainGeofenceLayer),
+      )
       .filter((geofence) => {
         const firstRing = geofence.boundary.coordinates?.[0];
         return Array.isArray(firstRing) && firstRing.length >= 4;
@@ -1619,6 +1645,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         properties: {
           id: geofence.id,
           park_name: geofence.parkName,
+          is_nested: Boolean(geofence.parentGeofenceId),
         },
         geometry: {
           type: "Polygon",
@@ -1643,7 +1670,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       type: "fill",
       source: sourceId,
       paint: {
-        "fill-color": "#22d3ee",
+        "fill-color": ["case", ["get", "is_nested"], "#f59e0b", "#22d3ee"],
         "fill-opacity": 0.12,
       },
     });
@@ -1653,15 +1680,28 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       type: "line",
       source: sourceId,
       paint: {
-        "line-color": "#06b6d4",
+        "line-color": ["case", ["get", "is_nested"], "#f59e0b", "#06b6d4"],
         "line-width": 2.5,
       },
     });
 
+    const drawLayerId = "gl-draw-polygon-fill-inactive";
+    if (map.getLayer(drawLayerId)) {
+      map.moveLayer?.(fillLayerId, drawLayerId);
+      map.moveLayer?.(lineLayerId, drawLayerId);
+    }
+
     return () => {
       clearGeofencePolygonLayers();
     };
-  }, [clearGeofencePolygonLayers, mapReadyTick, rows, selectedOrgId]);
+  }, [
+    clearGeofencePolygonLayers,
+    mapReadyTick,
+    rows,
+    selectedOrgId,
+    showMainGeofenceLayer,
+    showNestedGeofenceLayers,
+  ]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1785,9 +1825,8 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         ...defaultValues,
         created_by: currentUserId,
       });
-      drawRef.current?.deleteAll();
+      clearDraftPolygon();
       setTestAreaOutput("");
-      setCanEditPolygon(false);
       setCreateSuccess("Geofence created successfully.");
       setShowCreateForm(false);
     } catch (requestError) {
@@ -1840,7 +1879,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
       const refreshed = await loadGeofences(selectedOrgId);
       setRows(refreshed);
       setEditingGeofence(null);
-      drawRef.current?.deleteAll();
+      clearDraftPolygon();
       setTestAreaOutput("");
       setCanEditPolygon(false);
       setUpdateSuccess("Geofence updated successfully.");
@@ -1917,7 +1956,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
               });
               setTestAreaOutput("");
               setCanEditPolygon(false);
-              drawRef.current?.deleteAll();
+              clearDraftPolygon();
               setShowCreateForm(true);
             }}
             className="rounded-full border border-[var(--color-sand)]/40 bg-[var(--color-sand)]/18 px-5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-ice)] transition-colors hover:bg-[var(--color-sand)]/28"
@@ -1945,7 +1984,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
             clearActionMessages();
             setTestAreaOutput("");
             setCanEditPolygon(false);
-            drawRef.current?.deleteAll();
+            clearDraftPolygon();
           }}
           className="rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm"
         >
@@ -1973,6 +2012,32 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
             Extract Coordinates
           </button>
           <MapProviderSelector />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-[var(--color-fog)]">
+          <span className="uppercase tracking-[0.1em]">Reference layers</span>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showMainGeofenceLayer}
+              onChange={(event) =>
+                setShowMainGeofenceLayer(event.target.checked)
+              }
+              className="accent-cyan-400"
+            />
+            Main boundary
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showNestedGeofenceLayers}
+              onChange={(event) =>
+                setShowNestedGeofenceLayers(event.target.checked)
+              }
+              className="accent-amber-400"
+            />
+            Nested boundaries
+          </label>
         </div>
 
         <div className="relative">
@@ -2027,8 +2092,9 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
         </div>
 
         <p className="mt-2 text-xs text-[var(--color-fog)]">
-          Draw a polygon on the map, optionally edit vertices, then extract the
-          boundary JSON into the active form.
+          Existing geofences stay visible as reference layers. Draw one new
+          polygon at a time, select its parent, then extract the boundary JSON
+          into the active form.
         </p>
 
         <fieldset className="mt-4 rounded-xl border border-white/10 p-3">
@@ -2076,9 +2142,25 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
             <input
               required
               value={createValues.park_name}
-              readOnly
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
+              readOnly={!createValues.parent_geofence_id}
+              onChange={(event) =>
+                setCreateValues((prev) => ({
+                  ...prev,
+                  park_name: event.target.value,
+                }))
+              }
+              placeholder={
+                createValues.parent_geofence_id
+                  ? "Enter a name for this nested geofence"
+                  : undefined
+              }
+              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2 read-only:cursor-not-allowed read-only:opacity-70"
             />
+            {createValues.parent_geofence_id ? (
+              <span className="mt-1 block text-xs text-[var(--color-fog)]">
+                Nested geofences need their own unique name.
+              </span>
+            ) : null}
           </label>
 
           <div className="hidden sm:block" />
@@ -2107,12 +2189,20 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
             </span>
             <select
               value={createValues.parent_geofence_id}
-              onChange={(event) =>
+              onChange={(event) => {
+                const parentGeofenceId = event.target.value;
                 setCreateValues((prev) => ({
                   ...prev,
-                  parent_geofence_id: event.target.value,
-                }))
-              }
+                  parent_geofence_id: parentGeofenceId,
+                  park_name:
+                    parentGeofenceId &&
+                    prev.park_name === selectedOrganization?.name
+                      ? ""
+                      : !parentGeofenceId
+                        ? (selectedOrganization?.name ?? prev.park_name)
+                        : prev.park_name,
+                }));
+              }}
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             >
               <option value="">Main geofence</option>
@@ -2136,31 +2226,6 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
               readOnly
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             />
-          </label>
-
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-medium text-[var(--color-ice)]">
-              Parent geofence
-            </span>
-            <select
-              value={updateValues.parent_geofence_id}
-              onChange={(event) =>
-                setUpdateValues((prev) => ({
-                  ...prev,
-                  parent_geofence_id: event.target.value,
-                }))
-              }
-              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
-            >
-              <option value="">Main geofence</option>
-              {rows
-                ?.filter((geofence) => geofence.id !== editingGeofence?.id)
-                .map((geofence) => (
-                  <option key={geofence.id} value={geofence.id}>
-                    {geofence.parkName}
-                  </option>
-                ))}
-            </select>
           </label>
 
           <label className="block sm:col-span-2">
@@ -2214,7 +2279,7 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
                 setEditingGeofence(null);
                 clearActionMessages();
                 setCanEditPolygon(false);
-                drawRef.current?.deleteAll();
+                clearDraftPolygon();
               }}
               className="rounded-full border border-white/20 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.12em]"
             >
@@ -2269,6 +2334,32 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
               readOnly
               className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
             />
+          </label>
+
+          <label className="block sm:col-span-2">
+            <span className="text-sm font-medium text-[var(--color-ice)]">
+              Parent geofence (optional for the main geofence)
+            </span>
+            <select
+              value={updateValues.parent_geofence_id}
+              onChange={(event) =>
+                setUpdateValues((prev) => ({
+                  ...prev,
+                  parent_geofence_id: event.target.value,
+                }))
+              }
+              className="mt-2 w-full rounded-xl border border-[var(--color-shell-border)] bg-transparent px-3 py-2"
+            >
+              <option value="">Main geofence</option>
+              {rows
+                ?.filter((geofence) => geofence.id !== editingGeofence?.id)
+                .map((geofence) => (
+                  <option key={geofence.id} value={geofence.id}>
+                    {geofence.parentGeofenceId ? "Nested: " : "Main: "}
+                    {geofence.parkName}
+                  </option>
+                ))}
+            </select>
           </label>
 
           <label className="block sm:col-span-2">
@@ -2341,6 +2432,21 @@ export function TrackingGeofencesPageView(): React.JSX.Element {
           horizontalScroll
           columns={[
             { header: "Park", render: (row) => row.parkName },
+            {
+              header: "Layer",
+              render: (row) =>
+                row.parentGeofenceId ? (
+                  <span className="text-amber-300">Nested</span>
+                ) : (
+                  <span className="text-cyan-300">Main</span>
+                ),
+            },
+            {
+              header: "Parent",
+              render: (row) =>
+                rows.find((parent) => parent.id === row.parentGeofenceId)
+                  ?.parkName ?? "-",
+            },
             {
               header: "Vertices",
               render: (row) =>

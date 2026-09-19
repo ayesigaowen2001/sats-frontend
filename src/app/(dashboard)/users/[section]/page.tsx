@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { UsersAllUsersPageView } from "../../../../components/users-all-users-page-view";
 import { UsersPermissionsPageView } from "../../../../components/users-permissions-page-view";
+import { UsersReportPageView } from "../../../../components/users-report-page-view";
 import { UsersRolesPermissionsPageView } from "../../../../components/users-roles-permissions-page-view";
 import { UsersSystemAdministratorsPageView } from "../../../../components/users-system-administrators-page-view";
 import { hasModuleSection } from "@/lib/dashboard-config";
@@ -31,6 +32,10 @@ export default async function UsersSectionPage({
 
   if (section === "permissions") {
     return <UsersPermissionsPageView />;
+  }
+
+  if (section === "users-report") {
+    return <UsersReportPageView />;
   }
 
   notFound();

@@ -1,13 +1,12 @@
 "use client";
 
-import { Menu } from "primereact/menu";
-import type { MenuItem } from "primereact/menuitem";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
   getDashboardModule,
   getDefaultSidebarItem,
+  type DashboardNavItem,
 } from "@/lib/dashboard-config";
 import { getSessionData, type SessionData } from "@/lib/auth-tokens";
 import { canAccessPath } from "@/lib/rbac";
@@ -26,6 +25,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const defaultSidebarItem = getDefaultSidebarItem(pathname);
   const [hasHydrated, setHasHydrated] = useState(false);
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
+    {},
+  );
 
   // Read session data only after hydration to avoid mismatch
   useEffect(() => {
@@ -39,69 +41,67 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     return null;
   }
 
-  const moduleItems: MenuItem[] = currentModule.items
+  const canAccess = (href: string) => {
+    if (!sessionData) {
+      return true;
+    }
+
+    return canAccessPath(
+      href,
+      sessionData.permissions ?? [],
+      Boolean(sessionData.user.is_system_admin),
+    );
+  };
+
+  const displayLabelFor = (item: DashboardNavItem) =>
+    !sessionData?.user.is_system_admin &&
+    item.href === "/organization/all-organizations"
+      ? "My organisation"
+      : item.label;
+
+  const isItemActive = (href: string) =>
+    pathname === href ||
+    (pathname === currentModule.href && defaultSidebarItem?.href === href);
+
+  const navigateTo = (href: string) => {
+    router.push(href);
+
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      onClose();
+    }
+  };
+
+  const isGroupExpanded = (item: DashboardNavItem) => {
+    const hasActiveChild =
+      item.children?.some((child) => isItemActive(child.href)) ?? false;
+
+    return expandedGroups[item.href] ?? hasActiveChild;
+  };
+
+  const toggleGroup = (item: DashboardNavItem) => {
+    const next = !isGroupExpanded(item);
+    setExpandedGroups((current) => ({ ...current, [item.href]: next }));
+  };
+
+  const navButtonClass = (isActive: boolean) =>
+    cn(
+      "sats-sidebar-menu-item flex w-full items-center gap-3 rounded-[1.3rem] border px-4 py-3 text-left transition-colors",
+      isActive
+        ? "border-[var(--color-sand)]/40 bg-[var(--color-sand)]/12"
+        : "border-white/[0.06] bg-white/[0.025] hover:border-white/10 hover:bg-white/[0.08]",
+    );
+
+  const visibleItems = currentModule.items
     .filter((item) => item.label.trim().toLowerCase() !== "dashboard")
-    .filter((item) => {
-      if (!sessionData) {
-        return true;
+    .map((item) => {
+      if (item.children?.length) {
+        const children = item.children.filter((child) => canAccess(child.href));
+        return children.length ? { ...item, children } : null;
       }
 
-      return canAccessPath(
-        item.href,
-        sessionData.permissions ?? [],
-        Boolean(sessionData.user.is_system_admin),
-      );
+      return canAccess(item.href) ? item : null;
     })
-    .map((item) => {
-      const displayLabel =
-        !sessionData?.user.is_system_admin &&
-        item.href === "/organization/all-organizations"
-          ? "My organisation"
-          : item.label;
-
-      const isActive =
-        pathname === item.href ||
-        (pathname === currentModule.href &&
-          defaultSidebarItem?.href === item.href);
-
-      return {
-        key: item.href,
-        label: displayLabel,
-        command: () => {
-          router.push(item.href);
-
-          if (typeof window !== "undefined" && window.innerWidth < 1024) {
-            onClose();
-          }
-        },
-        template: (_, options) => (
-          <button
-            type="button"
-            onClick={options.onClick}
-            className={cn(
-              "sats-sidebar-menu-item flex items-center gap-3 rounded-[1.3rem] border px-4 py-3 text-left transition-colors",
-              isActive
-                ? "border-[var(--color-sand)]/40 bg-[var(--color-sand)]/12"
-                : "border-white/[0.06] bg-white/[0.025] hover:border-white/10 hover:bg-white/[0.08]",
-            )}
-            aria-current={isActive ? "page" : undefined}
-          >
-            <span
-              className={cn(
-                "pi text-sm",
-                isActive
-                  ? "pi-chevron-right text-[var(--color-sand)]"
-                  : "pi-angle-right text-[var(--color-fog)]",
-              )}
-              aria-hidden="true"
-            />
-            <span className="block text-sm font-semibold text-[var(--color-ice)]">
-              {displayLabel}
-            </span>
-          </button>
-        ),
-      };
-    });
+    .filter((item): item is DashboardNavItem => item !== null);
 
   return (
     <>
@@ -117,7 +117,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 w-[320px] flex-none border-r border-[var(--color-shell-border)] bg-[var(--color-night-soft)] shadow-[18px_0_48px_rgba(0,0,0,0.35)] transition-transform lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] lg:shadow-none",
+          "fixed inset-y-0 left-0 z-40 w-[320px] flex-none border-r border-[var(--color-shell-border)] bg-[var(--color-night-soft)] shadow-[18px_0_48px_rgba(0,0,0,0.35)] transition-transform lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] lg:shadow-none print:hidden",
           isOpen ? "translate-x-0" : "-translate-x-full lg:hidden",
         )}
       >
@@ -168,7 +168,97 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </span>
           </button>
 
-          <Menu model={moduleItems} className="sats-sidebar-menu mt-4" />
+          <nav className="mt-4 flex flex-col gap-2">
+            {visibleItems.map((item) => {
+              if (item.children?.length) {
+                const isExpanded = isGroupExpanded(item);
+                const isGroupActive = item.children.some((child) =>
+                  isItemActive(child.href),
+                );
+
+                return (
+                  <div key={item.href}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(item)}
+                      className={navButtonClass(isGroupActive)}
+                      aria-expanded={isExpanded}
+                    >
+                      <span
+                        className={cn(
+                          "pi text-sm",
+                          isGroupActive
+                            ? "text-[var(--color-sand)]"
+                            : "text-[var(--color-fog)]",
+                          isExpanded ? "pi-chevron-down" : "pi-chevron-right",
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className="block flex-1 text-sm font-semibold text-[var(--color-ice)]">
+                        {item.label}
+                      </span>
+                    </button>
+
+                    {isExpanded ? (
+                      <div className="mt-2 flex flex-col gap-2 border-l border-white/[0.08] pl-4">
+                        {item.children.map((child) => {
+                          const isActive = isItemActive(child.href);
+
+                          return (
+                            <button
+                              key={child.href}
+                              type="button"
+                              onClick={() => navigateTo(child.href)}
+                              className={navButtonClass(isActive)}
+                              aria-current={isActive ? "page" : undefined}
+                            >
+                              <span
+                                className={cn(
+                                  "pi text-sm",
+                                  isActive
+                                    ? "pi-chevron-right text-[var(--color-sand)]"
+                                    : "pi-angle-right text-[var(--color-fog)]",
+                                )}
+                                aria-hidden="true"
+                              />
+                              <span className="block text-sm font-semibold text-[var(--color-ice)]">
+                                {child.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              }
+
+              const isActive = isItemActive(item.href);
+
+              return (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => navigateTo(item.href)}
+                  className={navButtonClass(isActive)}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  <span
+                    className={cn(
+                      "pi text-sm",
+                      isActive
+                        ? "pi-chevron-right text-[var(--color-sand)]"
+                        : "pi-angle-right text-[var(--color-fog)]",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span className="block text-sm font-semibold text-[var(--color-ice)]">
+                    {displayLabelFor(item)}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
       </aside>
     </>

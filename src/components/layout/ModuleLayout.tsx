@@ -156,7 +156,7 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--color-night)] text-[var(--color-ice)]">
+    <div className="flex min-h-screen flex-col bg-[var(--color-night)] text-[var(--color-ice)] print:bg-white print:text-black">
       <div className="flex min-h-0 flex-1">
         {isModuleHub ? null : (
           <Sidebar
@@ -169,12 +169,12 @@ export function ModuleLayout({ children }: ModuleLayoutProps) {
             showSidebarToggle={!isModuleHub && !isSidebarOpen}
             onSidebarOpen={() => setIsSidebarOpen(true)}
           />
-          <main className="min-w-0 flex-1 overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
+          <main className="min-w-0 flex-1 overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5 print:overflow-visible print:p-0">
             <PageErrorBoundary>{children}</PageErrorBoundary>
           </main>
         </div>
       </div>
-      <footer className="border-t border-[var(--color-shell-border)] px-4 py-4 text-center text-xs text-[var(--color-fog)] sm:px-6">
+      <footer className="border-t border-[var(--color-shell-border)] px-4 py-4 text-center text-xs text-[var(--color-fog)] sm:px-6 print:hidden">
         Copyright SATS @2025
       </footer>
     </div>

@@ -5,6 +5,7 @@ import { OrganizationAllOrganizationsPageView } from "../../../../components/org
 import { OrganizationBrandingPageView } from "../../../../components/organization-branding-page-view";
 import { OrganizationLocalNodesPageView } from "../../../../components/organization-local-nodes-page-view";
 import { OrganizationSubscriptionPlansPageView } from "../../../../components/organization-subscription-plans-page-view";
+import { OrganisationOverviewReportPageView } from "../../../../components/organisation-overview-report-page-view";
 import { hasModuleSection } from "@/lib/dashboard-config";
 
 export default async function OrganizationSectionPage({
@@ -36,6 +37,10 @@ export default async function OrganizationSectionPage({
 
   if (section === "local-nodes") {
     return <OrganizationLocalNodesPageView />;
+  }
+
+  if (section === "organisation-overview") {
+    return <OrganisationOverviewReportPageView />;
   }
 
   notFound();

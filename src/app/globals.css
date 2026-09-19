@@ -162,3 +162,10 @@ select {
   background-color: rgba(17, 24, 39, 0.95);
   filter: invert(1) hue-rotate(180deg) brightness(1.25);
 }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

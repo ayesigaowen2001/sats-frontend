@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 
+import { CamerasReportPageView } from "@/components/cameras-report-page-view";
+import { FieldObservationsReportPageView } from "@/components/field-observations-report-page-view";
 import { VideoArchivePageView } from "@/components/video-archive-page-view";
 import { VideoCamerasPageView } from "@/components/video-monitoring-cameras-page-view";
 import { VideoLiveStreamPageView } from "@/components/video-live-stream-page-view";
@@ -31,6 +33,14 @@ export default async function VideoSectionPage({
 
   if (section === "activity-detections") {
     return <VideoActivityDetectionsPageView />;
+  }
+
+  if (section === "cameras-report") {
+    return <CamerasReportPageView />;
+  }
+
+  if (section === "field-observations-report") {
+    return <FieldObservationsReportPageView />;
   }
 
   notFound();

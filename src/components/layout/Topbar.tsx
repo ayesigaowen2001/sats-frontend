@@ -9,7 +9,7 @@ import {
   type KeyboardEvent,
 } from "react";
 
-import { dashboardModules } from "@/lib/dashboard-config";
+import { dashboardModules, type DashboardNavItem } from "@/lib/dashboard-config";
 import { useUIStore } from "@/store/useUIStore";
 import { useOrganizationBranding } from "@/hooks/useOrganizationBranding";
 import { OrganizationLogo } from "@/components/common/OrganizationLogo";
@@ -73,17 +73,26 @@ export function Topbar({
         keywords: `${dashboardModule.label} ${dashboardModule.description} ${dashboardModule.highlights.join(" ")}`,
       });
 
-      dashboardModule.items.forEach((item) => {
-        entries.push({
-          id: `menu:${dashboardModule.key}:${item.href}`,
-          href: item.href,
-          label: item.label,
-          description: item.description,
-          moduleLabel: dashboardModule.label,
-          type: "menu",
-          keywords: `${item.label} ${item.description} ${dashboardModule.label} ${dashboardModule.highlights.join(" ")}`,
+      const collectMenuItems = (items: DashboardNavItem[]) => {
+        items.forEach((item) => {
+          if (item.children?.length) {
+            collectMenuItems(item.children);
+            return;
+          }
+
+          entries.push({
+            id: `menu:${dashboardModule.key}:${item.href}`,
+            href: item.href,
+            label: item.label,
+            description: item.description,
+            moduleLabel: dashboardModule.label,
+            type: "menu",
+            keywords: `${item.label} ${item.description} ${dashboardModule.label} ${dashboardModule.highlights.join(" ")}`,
+          });
         });
-      });
+      };
+
+      collectMenuItems(dashboardModule.items);
     });
 
     return entries;
@@ -107,6 +116,7 @@ export function Topbar({
   }, [query, searchIndex]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuery("");
     setIsOpen(false);
     setSelectedIndex(0);
@@ -133,6 +143,7 @@ export function Topbar({
 
   useEffect(() => {
     if (!results.length) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedIndex(0);
       return;
     }
@@ -184,7 +195,7 @@ export function Topbar({
 
   return (
     <header
-      className="sticky top-0 z-30 border-b border-[var(--color-shell-border)] backdrop-blur-xl"
+      className="sticky top-0 z-30 border-b border-[var(--color-shell-border)] backdrop-blur-xl print:hidden"
       style={{
         backgroundColor: systemThemeColors.primary
           ? `color-mix(in srgb, ${systemThemeColors.primary} 76%, transparent)`
@@ -267,7 +278,7 @@ export function Topbar({
                 </ul>
               ) : (
                 <div className="px-4 py-4 text-sm text-[var(--color-mist)]">
-                  No results for "{query.trim()}".
+                  No results for &quot;{query.trim()}&quot;.
                 </div>
               )}
             </div>
